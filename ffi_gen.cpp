@@ -14,7 +14,7 @@
 #include <fstream>
 #include <streambuf>
 
-#include "tool.h"
+#include "ffi_gen.h"
 
 using namespace clang;
 using namespace clang::driver;
@@ -27,8 +27,7 @@ public:
     Preprocessor &pp;
     std::map<std::string, std::vector<Token> > macros;
 
-    GetMacros(Preprocessor &p) : pp(p)
-    {}
+    GetMacros(Preprocessor &p) : pp(p) {}
 
     virtual void MacroDefined(const Token &MacroNameTok, const MacroDirective *MD)
 	{
@@ -57,21 +56,10 @@ public:
     }
 };
 
-class MacroParseConsumer : public clang::ASTConsumer
-{
-public:
-    virtual void HandleTranslationUnit(clang::ASTContext &Context)
-    {
-    }
-};
-
 class MacroParseAction : public clang::PreprocessOnlyAction
 {
 public:
-    virtual std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(clang::CompilerInstance &Compiler, llvm::StringRef InFile)
-    {
-        return std::unique_ptr<clang::ASTConsumer> { new MacroParseConsumer };
-    }
+    MacroParseAction(callbacks &cb) : cb(cb) {}
 
     virtual void ExecuteAction()
     {
@@ -84,8 +72,6 @@ public:
 
         GetMacros *m = static_cast<GetMacros *>(p.getPPCallbacks());
 
-        std::vector<FFIMacroInfo> parsed_macros;
-
         for (auto &m : m->macros) {
             try {
                 std::vector<Token> tokens = fixMacrosRecursive(p, m.second);
@@ -94,19 +80,10 @@ public:
                 for (auto &t : tokens)
                     tokenPaste.append(p.getSpelling(t));
 
-                FFIMacroInfo fmi;
-                fmi.macro_name = strdup(m.first.c_str());
-                fmi.type = FFIMacroInfo::STRING_MACRO;
-                fmi.str_value = strdup(tokenPaste.c_str());
-
-                parsed_macros.push_back(fmi);
+                cb.mc(m.first.c_str(), tokenPaste.c_str(), cb.user_data);
             } catch (std::invalid_argument &ex) {
                 // do nothing
             }
-        }
-
-        for (auto &m : parsed_macros) {
-            printf("Macro %s: \"%s\"\n", m.macro_name, m.str_value);
         }
     }
 
@@ -151,12 +128,14 @@ private:
 
         return ret;
     }
+
+    callbacks &cb;
 };
 
 class FFIGenVisitor : public RecursiveASTVisitor<FFIGenVisitor>
 {
 public:
-    explicit FFIGenVisitor(ASTContext *Context) : Context(Context) {}
+    explicit FFIGenVisitor(ASTContext *Context, callbacks &cb) : Context(Context), cb(cb) {}
 
     virtual bool VisitFunctionDecl(FunctionDecl *func)
     {
@@ -167,16 +146,17 @@ public:
 
         std::string funcName = func->getNameInfo().getName().getAsString();
         std::string qualReturn = func->getReturnType().getAsString();
+        std::vector<std::string> paramTypeStrings;
+        std::vector<const char *> paramTypes;
 
-        std::cout << "Function declaration: " << qualReturn << " " << funcName << " ( ";
+        for (auto v : func->parameters()) {
+            std::string paramName = v->getOriginalType().getAsString();
 
-        for (auto v : func->parameters())
-            std::cout << v->getOriginalType().getAsString() << ", ";
+            paramTypeStrings.push_back(paramName);
+            paramTypes.push_back(paramName.c_str());
+        }
 
-        if (func->param_begin() != func->param_end())
-            std::cout << "\b\b ) \n";
-        else
-            std::cout <<" ) \n";
+        cb.fc(funcName.c_str(), qualReturn.c_str(), &paramTypes[0], paramTypes.size(), cb.user_data);
 
         return true;
     }
@@ -190,24 +170,28 @@ public:
         if (!sm.isInMainFile(sm.getExpansionLoc(ed->getLocStart())))
             return true;
 
-        if (!ed->hasNameForLinkage()) {
-            std::cout << "Enum declaration: <anonymous> { ";
-        } else {
-            std::string name = ed->getNameAsString();
-            if (name.size() == 0)
-                name = ed->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
+        // Don't try to do binding for non-exported enums
+        if (!ed->hasNameForLinkage())
+            return true;
 
-            std::cout << "Enum declaration: " << name << " { ";
-        }
+
+        std::string name = ed->getNameAsString();
+        if (name.size() == 0)
+            name = ed->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
+
+        std::vector<std::string> memberNameStrings;
+        std::vector<const char *> memberNames;
+        std::vector<int64_t> memberValues;
 
         for (auto d : ed->enumerators()) {
-            std::cout << d->getNameAsString() << " = " << d->getInitVal().getExtValue() << ", ";
+            std::string memberName = d->getNameAsString();
+
+            memberNameStrings.push_back(memberName);
+            memberNames.push_back(memberName.c_str());
+            memberValues.push_back(d->getInitVal().getExtValue());
         }
 
-        if (ed->enumerator_begin() != ed->enumerator_end())
-            std::cout << "\b\b } \n";
-        else
-            std::cout << " } \n";
+        cb.ec(name.c_str(), &memberNames[0], &memberValues[0], memberValues.size(), cb.user_data);
 
         return true;
     }
@@ -222,7 +206,7 @@ public:
         std::string aliasName = td->getNameAsString();
         std::string origName = td->getUnderlyingType().getAsString();
 
-        std::cout << "Typedef: " << origName << " --> " << aliasName << "\n";
+        cb.tc(origName.c_str(), aliasName.c_str(), cb.user_data);
 
         return true;
     }
@@ -236,45 +220,49 @@ public:
         if (!rd || !sm.isInMainFile(sm.getExpansionLoc(rd->getLocStart())))
             return true;
 
-        std::string structName = rd->getNameAsString();
+        // Don't try to do binding for non-exported structs/unions
+        if (!rd->hasNameForLinkage())
+            return true;
 
-        if (rd->isUnion())
-            std::cout << "Union: ";
-        else
-            std::cout << "Struct: ";
+        std::string name = rd->getNameAsString();
+        if (name.size() == 0)
+            name = rd->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
 
-        if (!rd->hasNameForLinkage()) {
-            std::cout << "<anonymous> {\n";
-        } else {
-            std::string name = rd->getNameAsString();
-            if (name.size() == 0)
-                name = rd->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
-
-            std::cout << name << " {\n";
-        }
+        std::vector<std::string> memberNameStrings;
+        std::vector<const char *> memberNames;
+        std::vector<std::string> memberTypeStrings;
+        std::vector<const char *> memberTypes;
+        std::vector<size_t> memberWidths;
 
         for (auto f : rd->fields()) {
-            std::cout << "\t" << f->getType().getAsString() << " " << f->getNameAsString();
-            if (f->isBitField())
-                std::cout << " : " << f->getBitWidthValue(*Context);
-            // FIXME: handle anonymous struct members
-            std::cout << ";\n";
+            std::string memberType = f->getType().getAsString();
+            std::string memberName = f->getNameAsString();
+
+            memberTypeStrings.push_back(memberType);
+            memberTypes.push_back(memberType.c_str());
+            memberNameStrings.push_back(memberName);
+            memberNames.push_back(memberName.c_str());
         }
 
-        std::cout << "};\n";
+        if (rd->isUnion()) {
+            cb.uc(name.c_str(), &memberNames[0], &memberTypes[0], memberTypes.size(), cb.user_data);
+        } else {
+            cb.uc(name.c_str(), &memberNames[0], &memberTypes[0], memberTypes.size(), cb.user_data);
+        }
 
         return true;
     }
 
 private:
     ASTContext *Context;
+    callbacks &cb;
 };
 
 
 class FFIParseConsumer : public clang::ASTConsumer
 {
 public:
-    explicit FFIParseConsumer(ASTContext *Context) : Visitor(Context)
+    explicit FFIParseConsumer(ASTContext *Context, callbacks &cb) : Visitor(Context, cb)
     {}
 
     virtual void HandleTranslationUnit(clang::ASTContext &Context)
@@ -288,29 +276,26 @@ private:
 
 class FFIParseAction : public clang::ASTFrontendAction {
 public:
+    FFIParseAction(callbacks &cb) : cb(cb) {}
+
     virtual std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(clang::CompilerInstance &Compiler, llvm::StringRef InFile)
     {
-        return std::unique_ptr<clang::ASTConsumer> { new FFIParseConsumer { &Compiler.getASTContext() } };
+        return std::unique_ptr<clang::ASTConsumer> { new FFIParseConsumer { &Compiler.getASTContext(), cb } };
     }
+
+private:
+    callbacks &cb;
 };
 
-
-int main(int argc, const char **argv)
+void walk_file(const char *filename, const char **clangArgs, int argc, callbacks c)
 {
-    if (argc <= 1) {
-        std::cerr << "Invoke with file name\n";
-        return 1;
-    }
-
-    std::ifstream t { argv[1] };
+    std::ifstream t { filename };
     std::string inFile { std::istreambuf_iterator<char>(t), std::istreambuf_iterator<char>() };
     std::vector<std::string> args;
 
-    for (int i = 2; i < argc; ++i)
-        args.push_back(std::string { argv[i] });
+    for (int i = 0; i < argc; ++i)
+        args.push_back(std::string { clangArgs[i] });
 
-    clang::tooling::runToolOnCodeWithArgs(new MacroParseAction, inFile, args, argv[1]);
-    clang::tooling::runToolOnCodeWithArgs(new FFIParseAction, inFile, args, argv[1]);
-
-    return 0;
+    clang::tooling::runToolOnCodeWithArgs(new MacroParseAction { c }, inFile, args, filename);
+    clang::tooling::runToolOnCodeWithArgs(new FFIParseAction { c }, inFile, args, filename);
 }

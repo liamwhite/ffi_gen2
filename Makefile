@@ -1,5 +1,5 @@
 CXX      := clang++-7
-CXXFLAGS := -I/usr/lib/llvm-7/include
+CXXFLAGS := -I/usr/lib/llvm-7/include -fPIC
 LIBS     := $(LIBS) -lclangTooling -lclangFrontendTool -lclangFrontend \
 	    -lclangDriver -lclangSerialization -lclangCodeGen -lclangParse \
 	    -lclangSema -lclangStaticAnalyzerFrontend \
@@ -11,10 +11,10 @@ RM       ?= rm
 
 .PHONY: all clean
 
-all: tool
+all: libffi_gen.so
 
-tool: tool.cpp tool.h
-	$(CXX) tool.cpp -o tool $(CXXFLAGS) $(LIBS)
+libffi_gen.so: ffi_gen.cpp ffi_gen.h
+	$(CXX) ffi_gen.cpp -shared -o libffi_gen.so $(CXXFLAGS) $(LIBS)
 
 clean:
-	$(RM) -fr tool
+	$(RM) -fr libffi_gen.so
