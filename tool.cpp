@@ -177,12 +177,15 @@ public:
         if (!sm.isInMainFile(sm.getExpansionLoc(ed->getLocStart())))
             return true;
 
-        std::string name = ed->getNameAsString();
-
-        if (name.size() == 0)
+        if (!ed->hasNameForLinkage()) {
             std::cout << "Enum declaration: <anonymous> { ";
-        else
+        } else {
+            std::string name = ed->getNameAsString();
+            if (name.size() == 0)
+                name = ed->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
+
             std::cout << "Enum declaration: " << name << " { ";
+        }
 
         for (auto d : ed->enumerators()) {
             std::cout << d->getNameAsString() << " = " << d->getInitVal().getExtValue() << ", ";
@@ -227,10 +230,15 @@ public:
         else
             std::cout << "Struct: ";
 
-        if (structName.size() == 0)
-            std::cout << structName << " {\n";
-        else
+        if (!rd->hasNameForLinkage()) {
             std::cout << "<anonymous> {\n";
+        } else {
+            std::string name = rd->getNameAsString();
+            if (name.size() == 0)
+                name = rd->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
+
+            std::cout << name << " {\n";
+        }
 
         for (auto f : rd->fields()) {
             std::cout << "\t" << f->getType().getAsString() << " " << f->getNameAsString();
