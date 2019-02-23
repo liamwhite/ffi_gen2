@@ -211,6 +211,40 @@ public:
         return true;
     }
 
+    virtual bool VisitRecordDecl(RecordDecl *rd)
+    {
+        rd = rd->getDefinition();
+
+        // Don't grab structs that aren't defined or not in the main file
+        clang::SourceManager &sm { Context->getSourceManager() };
+        if (!rd || !sm.isInMainFile(sm.getExpansionLoc(rd->getLocStart())))
+            return true;
+
+        std::string structName = rd->getNameAsString();
+
+        if (rd->isUnion())
+            std::cout << "Union: ";
+        else
+            std::cout << "Struct: ";
+
+        if (structName.size() == 0)
+            std::cout << structName << " {\n";
+        else
+            std::cout << "<anonymous> {\n";
+
+        for (auto f : rd->fields()) {
+            std::cout << "\t" << f->getType().getAsString() << " " << f->getNameAsString();
+            if (f->isBitField())
+                std::cout << " : " << f->getBitWidthValue(*Context);
+            // FIXME: handle anonymous struct members
+            std::cout << ";\n";
+        }
+
+        std::cout << "};\n";
+
+        return true;
+    }
+
 private:
     ASTContext *Context;
 };
