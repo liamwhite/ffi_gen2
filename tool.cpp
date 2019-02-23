@@ -160,7 +160,53 @@ public:
         for (auto v : func->parameters())
             std::cout << v->getOriginalType().getAsString() << ", ";
 
-        std::cout << "\b\b ) \n";
+        if (func->param_begin() != func->param_end())
+            std::cout << "\b\b ) \n";
+        else
+            std::cout <<" ) \n";
+
+        return true;
+    }
+
+    virtual bool VisitEnumDecl(EnumDecl *ed)
+    {
+        ed = ed->getCanonicalDecl();
+
+        // Don't grab enums that aren't in the main file
+        clang::SourceManager &sm { Context->getSourceManager() };
+        if (!sm.isInMainFile(sm.getExpansionLoc(ed->getLocStart())))
+            return true;
+
+        std::string name = ed->getNameAsString();
+
+        if (name.size() == 0)
+            std::cout << "Enum declaration: <anonymous> { ";
+        else
+            std::cout << "Enum declaration: " << name << " { ";
+
+        for (auto d : ed->enumerators()) {
+            std::cout << d->getNameAsString() << " = " << d->getInitVal().getExtValue() << ", ";
+        }
+
+        if (ed->enumerator_begin() != ed->enumerator_end())
+            std::cout << "\b\b } \n";
+        else
+            std::cout << " } \n";
+
+        return true;
+    }
+
+    virtual bool VisitTypedefDecl(TypedefDecl *td)
+    {
+        // Don't grab typedefs that aren't in the main file
+        clang::SourceManager &sm { Context->getSourceManager() };
+        if (!sm.isInMainFile(sm.getExpansionLoc(td->getLocStart())))
+            return true;
+
+        std::string aliasName = td->getNameAsString();
+        std::string origName = td->getUnderlyingType().getAsString();
+
+        std::cout << "Typedef: " << origName << " --> " << aliasName << "\n";
 
         return true;
     }
