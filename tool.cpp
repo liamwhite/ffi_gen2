@@ -108,25 +108,35 @@ private:
             i  = t.getIdentifierInfo();
             mi = p.getMacroInfo(i);
 
-            if (!mi || !mi->isObjectLike())
+            if (!mi) {
+                ret.push_back(t);
                 continue;
+            }
+
+            if (!mi->isObjectLike()) {
+                // need to propagate up to the root in order to not emit this
+                // macro
+                throw std::invalid_argument { "Macro child is not object-like" };
+            }
 
             std::vector<Token> childTokens;
 
             for (auto &k : mi->tokens())
                 childTokens.push_back(k);
 
-            childTokens = fixMacrosRecursive(p, childTokens);
+            try {
+                childTokens = fixMacrosRecursive(p, childTokens);
 
-            for (auto &k : childTokens)
-                ret.push_back(k);
+                for (auto &k : childTokens)
+                    ret.push_back(k);
+            } catch (std::invalid_argument &ex) {
+                // do nothing
+            }
         }
 
         return ret;
     }
 };
-
-static cl::OptionCategory MyToolCategory("My tool options");
 
 int main(int argc, const char **argv)
 {
@@ -142,7 +152,7 @@ int main(int argc, const char **argv)
     for (int i = 2; i < argc; ++i)
         args.push_back(std::string { argv[i] });
 
-    clang::tooling::runToolOnCodeWithArgs(new MacroParseAction(), inFile, args, argv[1]);
+    clang::tooling::runToolOnCodeWithArgs(new MacroParseAction, inFile, args, argv[1]);
 
     return 0;
 }
