@@ -55,14 +55,16 @@ public:
     }
 };
 
-class MacroParseConsumer : public clang::ASTConsumer {
+class MacroParseConsumer : public clang::ASTConsumer
+{
 public:
     virtual void HandleTranslationUnit(clang::ASTContext &Context)
     {
     }
 };
 
-class MacroParseAction : public clang::PreprocessOnlyAction {
+class MacroParseAction : public clang::PreprocessOnlyAction
+{
 public:
     virtual std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(clang::CompilerInstance &Compiler, llvm::StringRef InFile)
     {
@@ -138,6 +140,60 @@ private:
     }
 };
 
+class FFIGenVisitor : public RecursiveASTVisitor<FFIGenVisitor>
+{
+public:
+    explicit FFIGenVisitor(ASTContext *Context) : Context(Context) {}
+
+    virtual bool VisitFunctionDecl(FunctionDecl *func)
+    {
+        // Don't grab functions that aren't in the main file
+        clang::SourceManager &sm { Context->getSourceManager() };
+        if (!sm.isInMainFile(sm.getExpansionLoc(func->getLocStart())))
+            return true;
+
+        std::string funcName = func->getNameInfo().getName().getAsString();
+        std::string qualReturn = func->getReturnType().getAsString();
+
+        std::cout << "Function declaration: " << qualReturn << " " << funcName << " ( ";
+
+        for (auto v : func->parameters())
+            std::cout << v->getOriginalType().getAsString() << ", ";
+
+        std::cout << "\b\b ) \n";
+
+        return true;
+    }
+
+private:
+    ASTContext *Context;
+};
+
+
+class FFIParseConsumer : public clang::ASTConsumer
+{
+public:
+    explicit FFIParseConsumer(ASTContext *Context) : Visitor(Context)
+    {}
+
+    virtual void HandleTranslationUnit(clang::ASTContext &Context)
+    {
+        Visitor.TraverseDecl(Context.getTranslationUnitDecl());
+    }
+
+private:
+    FFIGenVisitor Visitor;
+};
+
+class FFIParseAction : public clang::ASTFrontendAction {
+public:
+    virtual std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(clang::CompilerInstance &Compiler, llvm::StringRef InFile)
+    {
+        return std::unique_ptr<clang::ASTConsumer> { new FFIParseConsumer { &Compiler.getASTContext() } };
+    }
+};
+
+
 int main(int argc, const char **argv)
 {
     if (argc <= 1) {
@@ -153,6 +209,7 @@ int main(int argc, const char **argv)
         args.push_back(std::string { argv[i] });
 
     clang::tooling::runToolOnCodeWithArgs(new MacroParseAction, inFile, args, argv[1]);
+    clang::tooling::runToolOnCodeWithArgs(new FFIParseAction, inFile, args, argv[1]);
 
     return 0;
 }
