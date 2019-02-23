@@ -24,7 +24,7 @@ typedef struct {
     void *user_data;
 } callbacks;
 
-void walk_file(const char *filename, const char **clangArgs, int argc, callbacks c);
+void walk_file(const char *filename, const char **clangArgs, int argc, callbacks *c);
 
 #ifdef __cplusplus
 } // extern "C"

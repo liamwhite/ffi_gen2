@@ -247,7 +247,7 @@ public:
         if (rd->isUnion()) {
             cb.uc(name.c_str(), &memberNames[0], &memberTypes[0], memberTypes.size(), cb.user_data);
         } else {
-            cb.uc(name.c_str(), &memberNames[0], &memberTypes[0], memberTypes.size(), cb.user_data);
+            cb.sc(name.c_str(), &memberNames[0], &memberTypes[0], memberTypes.size(), cb.user_data);
         }
 
         return true;
@@ -287,7 +287,7 @@ private:
     callbacks &cb;
 };
 
-void walk_file(const char *filename, const char **clangArgs, int argc, callbacks c)
+void walk_file(const char *filename, const char **clangArgs, int argc, callbacks *c)
 {
     std::ifstream t { filename };
     std::string inFile { std::istreambuf_iterator<char>(t), std::istreambuf_iterator<char>() };
@@ -296,6 +296,6 @@ void walk_file(const char *filename, const char **clangArgs, int argc, callbacks
     for (int i = 0; i < argc; ++i)
         args.push_back(std::string { clangArgs[i] });
 
-    clang::tooling::runToolOnCodeWithArgs(new MacroParseAction { c }, inFile, args, filename);
-    clang::tooling::runToolOnCodeWithArgs(new FFIParseAction { c }, inFile, args, filename);
+    clang::tooling::runToolOnCodeWithArgs(new MacroParseAction { *c }, inFile, args, filename);
+    clang::tooling::runToolOnCodeWithArgs(new FFIParseAction { *c }, inFile, args, filename);
 }
