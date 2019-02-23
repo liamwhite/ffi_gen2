@@ -14,6 +14,8 @@
 #include <fstream>
 #include <streambuf>
 
+#include "tool.h"
+
 using namespace clang;
 using namespace clang::driver;
 using namespace clang::tooling;
@@ -82,14 +84,29 @@ public:
 
         GetMacros *m = static_cast<GetMacros *>(p.getPPCallbacks());
 
+        std::vector<FFIMacroInfo> parsed_macros;
+
         for (auto &m : m->macros) {
-            std::cout << "Macro: " << m.first << ": ";
-            std::vector<Token> tokens = fixMacrosRecursive(p, m.second);
+            try {
+                std::vector<Token> tokens = fixMacrosRecursive(p, m.second);
+                std::string tokenPaste;
 
-            for (auto &t : tokens)
-                std::cout << p.getSpelling(t) << " ";
+                for (auto &t : tokens)
+                    tokenPaste.append(p.getSpelling(t));
 
-            std::cout << "\n";
+                FFIMacroInfo fmi;
+                fmi.macro_name = strdup(m.first.c_str());
+                fmi.type = FFIMacroInfo::STRING_MACRO;
+                fmi.str_value = strdup(tokenPaste.c_str());
+
+                parsed_macros.push_back(fmi);
+            } catch (std::invalid_argument &ex) {
+                // do nothing
+            }
+        }
+
+        for (auto &m : parsed_macros) {
+            printf("Macro %s: \"%s\"\n", m.macro_name, m.str_value);
         }
     }
 
@@ -126,14 +143,10 @@ private:
             for (auto &k : mi->tokens())
                 childTokens.push_back(k);
 
-            try {
-                childTokens = fixMacrosRecursive(p, childTokens);
+            childTokens = fixMacrosRecursive(p, childTokens);
 
-                for (auto &k : childTokens)
-                    ret.push_back(k);
-            } catch (std::invalid_argument &ex) {
-                // do nothing
-            }
+            for (auto &k : childTokens)
+                ret.push_back(k);
         }
 
         return ret;

@@ -13,7 +13,7 @@ RM       ?= rm
 
 all: tool
 
-tool: tool.cpp
+tool: tool.cpp tool.h
 	$(CXX) tool.cpp -o tool $(CXXFLAGS) $(LIBS)
 
 clean:
