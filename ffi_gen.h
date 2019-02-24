@@ -9,20 +9,48 @@ extern "C" {
 
 struct FFITypeRef;
 
-struct FFIVoidRef {
+enum FFIIntegerType {
+    Bool,
+    UInt8,
+    Int8,
+    UInt16,
+    Int16,
+    UInt32,
+    Int32,
+    UInt64,
+    Int64,
+    Int128
+};
+
+enum FFIFloatType {
+    Half,
+    Float,
+    Double,
+    LongDouble
+};
+
+enum FFIRefType {
+    ENUM_REF,
+    STRUCT_REF,
+    UNION_REF,
+    FUNCTION_REF,
+    INTEGER_REF,
+    FLOAT_REF,
+    POINTER_REF,
+    VOID_REF
 };
 
 struct FFIIntegerRef {
-    int width;   ///< Bit width
+    enum FFIIntegerType type;
 };
 
 struct FFIFloatRef {
-    int width; ///< Bit width
+    enum FFIFloatType type;
 };
 
 struct FFIFunctionRef {
-    FFITypeRef *return_type; ///< Function return type
-    FFITypeRef *param_types; ///< Types of the formal parameters
+    struct FFITypeRef *return_type; ///< Function return type
+    struct FFITypeRef *param_types; ///< Types of the formal parameters
     size_t num_params;
 };
 
@@ -39,21 +67,11 @@ struct FFIUnionRef {
 };
 
 struct FFIPointerRef {
-    FFITypeRef *pointed_type; ///< Pointed-to type
+    struct FFITypeRef *pointed_type; ///< Pointed-to type
 };
 
 struct FFITypeRef {
-    enum {
-        ENUM_REF,
-        STRUCT_REF,
-        UNION_REF,
-        FUNCTION_REF,
-        SINTEGER_REF,
-        UINTEGER_REF,
-        FLOAT_REF,
-        POINTER_REF,
-        VOID_REF
-    } type;
+    enum FFIRefType type;
 
     union {
         struct FFIEnumRef enum_type;
@@ -67,11 +85,11 @@ struct FFITypeRef {
 };
 
 typedef void (*macro_callback)(const char *name, const char *definition, void *data);
-typedef void (*typedef_callback)(const char *name, FFITypeRef *to, void *data);
-typedef void (*function_callback)(const char *name, FFITypeRef *return_type, FFITypeRef *param_types, size_t num_params, void *data);
+typedef void (*typedef_callback)(const char *name, struct FFITypeRef *to, void *data);
+typedef void (*function_callback)(const char *name, struct FFITypeRef *return_type, struct FFITypeRef *param_types, size_t num_params, void *data);
 typedef void (*enum_callback)(const char *name, const char **member_names, int64_t *member_values, size_t num_members, void *data);
-typedef void (*struct_callback)(const char *name, FFITypeRef *member_types, const char **member_names, size_t num_members, void *data);
-typedef void (*union_callback)(const char *name, FFITypeRef *member_types, const char **member_names, size_t num_members, void *data);
+typedef void (*struct_callback)(const char *name, struct FFITypeRef *member_types, const char **member_names, size_t num_members, void *data);
+typedef void (*union_callback)(const char *name, struct FFITypeRef *member_types, const char **member_names, size_t num_members, void *data);
 
 typedef struct {
     macro_callback mc;

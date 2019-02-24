@@ -285,12 +285,12 @@ static FFITypeRef type_for_qual(QualType qt)
     FFITypeRef returnTy;
 
     if (qt->isVoidType()) {
-        returnTy.type = FFITypeRef::VOID_REF;
+        returnTy.type = FFIRefType::VOID_REF;
     } else if (qt->isPointerType()) {
         // LEAK
         FFITypeRef *pointee = new FFITypeRef { type_for_qual(qt->getPointeeType()) };
 
-        returnTy.type = FFITypeRef::POINTER_REF;
+        returnTy.type = FFIRefType::POINTER_REF;
         returnTy.point_type.pointed_type = pointee;
     } else if (qt->isEnumeralType()) {
         const EnumDecl *ed = qt->castAs<EnumType>()->getDecl();
@@ -299,7 +299,7 @@ static FFITypeRef type_for_qual(QualType qt)
         if (name.size() == 0)
             name = ed->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
 
-        returnTy.type = FFITypeRef::ENUM_REF;
+        returnTy.type = FFIRefType::ENUM_REF;
         returnTy.enum_type.name = strdup(name.c_str()); // LEAK
     } else if (qt->isRecordType()) {
         const RecordDecl *rd = qt->castAs<RecordType>()->getDecl();
@@ -309,10 +309,10 @@ static FFITypeRef type_for_qual(QualType qt)
             name = rd->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
 
         if (qt->isUnionType()) {
-            returnTy.type = FFITypeRef::UNION_REF;
+            returnTy.type = FFIRefType::UNION_REF;
             returnTy.union_type.name = strdup(name.c_str()); // LEAK
         } else {
-            returnTy.type = FFITypeRef::STRUCT_REF;
+            returnTy.type = FFIRefType::STRUCT_REF;
             returnTy.struct_type.name = strdup(name.c_str()); // LEAK
         }
     } else if (qt->isFunctionProtoType()) {
@@ -323,7 +323,7 @@ static FFITypeRef type_for_qual(QualType qt)
         for (size_t i = 0; i < ft->getNumParams(); ++i)
             param_types->push_back(FFITypeRef { type_for_qual(ft->getParamType(i)) } );
 
-        returnTy.type = FFITypeRef::FUNCTION_REF;
+        returnTy.type = FFIRefType::FUNCTION_REF;
         returnTy.func_type.return_type = ret_type;
         returnTy.func_type.param_types = &((*param_types)[0]);
         returnTy.func_type.num_params = ft->getNumParams();
@@ -331,7 +331,7 @@ static FFITypeRef type_for_qual(QualType qt)
         const FunctionNoProtoType *ft = qt->castAs<FunctionNoProtoType>();
 
         FFITypeRef *ret_type = new FFITypeRef { type_for_qual(ft->getReturnType()) }; // LEAK
-        returnTy.type = FFITypeRef::FUNCTION_REF;
+        returnTy.type = FFIRefType::FUNCTION_REF;
         returnTy.func_type.return_type = ret_type;
         returnTy.func_type.param_types = nullptr;
         returnTy.func_type.num_params = 0;
@@ -340,77 +340,77 @@ static FFITypeRef type_for_qual(QualType qt)
 
         switch (bt->getKind()) {
         case BuiltinType::Kind::Bool:
-            returnTy.type = FFITypeRef::UINTEGER_REF;
-            returnTy.int_type.width = 1;
+            returnTy.type = FFIRefType::INTEGER_REF;
+            returnTy.int_type.type = FFIIntegerType::Bool;
             break;
 
         case BuiltinType::Kind::Char_U:
         case BuiltinType::Kind::UChar:
-            returnTy.type = FFITypeRef::UINTEGER_REF;
-            returnTy.int_type.width = 8;
+            returnTy.type = FFIRefType::INTEGER_REF;
+            returnTy.int_type.type = FFIIntegerType::UInt8;
             break;
 
         case BuiltinType::Kind::Char8:
         case BuiltinType::Kind::Char_S:
         case BuiltinType::Kind::SChar:
-            returnTy.type = FFITypeRef::SINTEGER_REF;
-            returnTy.int_type.width = 8;
+            returnTy.type = FFIRefType::INTEGER_REF;
+            returnTy.int_type.type = FFIIntegerType::Int8;
             break;
 
         case BuiltinType::Kind::WChar_U:
         case BuiltinType::Kind::UShort:
-            returnTy.type = FFITypeRef::UINTEGER_REF;
-            returnTy.int_type.width = 16;
+            returnTy.type = FFIRefType::INTEGER_REF;
+            returnTy.int_type.type = FFIIntegerType::UInt16;
             break;
 
         case BuiltinType::Kind::WChar_S:
         case BuiltinType::Kind::Char16:
         case BuiltinType::Kind::Short:
-            returnTy.type = FFITypeRef::SINTEGER_REF;
-            returnTy.int_type.width = 16;
+            returnTy.type = FFIRefType::INTEGER_REF;
+            returnTy.int_type.type = FFIIntegerType::Int16;
             break;
 
         case BuiltinType::Kind::Char32:
         case BuiltinType::Kind::Int:
-            returnTy.type = FFITypeRef::SINTEGER_REF;
-            returnTy.int_type.width = 32;
+            returnTy.type = FFIRefType::INTEGER_REF;
+            returnTy.int_type.type = FFIIntegerType::Int32;
             break;
 
         case BuiltinType::Kind::UInt:
-            returnTy.type = FFITypeRef::UINTEGER_REF;
-            returnTy.int_type.width = 32;
+            returnTy.type = FFIRefType::INTEGER_REF;
+            returnTy.int_type.type = FFIIntegerType::UInt32;
             break;
 
         case BuiltinType::Kind::Long:
         case BuiltinType::Kind::LongLong:
-            returnTy.type = FFITypeRef::SINTEGER_REF;
-            returnTy.int_type.width = 64;
+            returnTy.type = FFIRefType::INTEGER_REF;
+            returnTy.int_type.type = FFIIntegerType::Int64;
             break;
 
         case BuiltinType::Kind::ULong:
         case BuiltinType::Kind::ULongLong:
-            returnTy.type = FFITypeRef::UINTEGER_REF;
-            returnTy.int_type.width = 64;
+            returnTy.type = FFIRefType::INTEGER_REF;
+            returnTy.int_type.type = FFIIntegerType::UInt64;
             break;
 
         case BuiltinType::Kind::Int128:
-            returnTy.type = FFITypeRef::SINTEGER_REF;
-            returnTy.int_type.width = 128;
+            returnTy.type = FFIRefType::INTEGER_REF;
+            returnTy.int_type.type = FFIIntegerType::Int128;
             break;
 
         case BuiltinType::Kind::Float:
-            returnTy.type = FFITypeRef::FLOAT_REF;
-            returnTy.float_type.width = 32;
+            returnTy.type = FFIRefType::FLOAT_REF;
+            returnTy.float_type.type = FFIFloatType::Float;
             break;
 
         case BuiltinType::Kind::Double:
-            returnTy.type = FFITypeRef::FLOAT_REF;
-            returnTy.float_type.width = 64;
+            returnTy.type = FFIRefType::FLOAT_REF;
+            returnTy.float_type.type = FFIFloatType::Double;
             break;
 
         case BuiltinType::Kind::LongDouble:
-            returnTy.type = FFITypeRef::FLOAT_REF;
-            returnTy.float_type.width = 80;
+            returnTy.type = FFIRefType::FLOAT_REF;
+            returnTy.float_type.type = FFIFloatType::LongDouble;
             break;
         default:
             fprintf(stderr, "unknown type %s\n", qt.getAsString().c_str());
