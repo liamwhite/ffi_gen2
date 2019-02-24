@@ -21,6 +21,9 @@ using namespace clang::driver;
 using namespace clang::tooling;
 using namespace llvm;
 
+static FFITypeRef type_for_qual(QualType qt);
+static void get_types_for_func(FunctionDecl *fd, FFITypeRef &returnTy, std::vector<FFITypeRef> &paramTys);
+
 class GetMacros : public PPCallbacks
 {
 public:
@@ -144,19 +147,13 @@ public:
         if (!sm.isInMainFile(sm.getExpansionLoc(func->getLocStart())))
             return true;
 
+        FFITypeRef returnTy;
         std::string funcName = func->getNameInfo().getName().getAsString();
-        std::string qualReturn = func->getReturnType().getAsString();
-        std::vector<std::string> paramTypeStrings;
-        std::vector<const char *> paramTypes;
+        std::vector<FFITypeRef> paramTys;
 
-        for (auto v : func->parameters()) {
-            std::string paramName = v->getOriginalType().getAsString();
+        get_types_for_func(func, returnTy, paramTys);
 
-            paramTypeStrings.push_back(paramName);
-            paramTypes.push_back(paramName.c_str());
-        }
-
-        cb.fc(funcName.c_str(), qualReturn.c_str(), &paramTypes[0], paramTypes.size(), cb.user_data);
+        cb.fc(funcName.c_str(), &returnTy, &paramTys[0], paramTys.size(), cb.user_data);
 
         return true;
     }
@@ -204,9 +201,9 @@ public:
             return true;
 
         std::string aliasName = td->getNameAsString();
-        std::string origName = td->getUnderlyingType().getAsString();
+        FFITypeRef type = type_for_qual(td->getUnderlyingType());
 
-        cb.tc(origName.c_str(), aliasName.c_str(), cb.user_data);
+        cb.tc(aliasName.c_str(), &type, cb.user_data);
 
         return true;
     }
@@ -230,24 +227,20 @@ public:
 
         std::vector<std::string> memberNameStrings;
         std::vector<const char *> memberNames;
-        std::vector<std::string> memberTypeStrings;
-        std::vector<const char *> memberTypes;
-        std::vector<size_t> memberWidths;
+        std::vector<FFITypeRef> memberTypes;
 
         for (auto f : rd->fields()) {
-            std::string memberType = f->getType().getAsString();
             std::string memberName = f->getNameAsString();
 
-            memberTypeStrings.push_back(memberType);
-            memberTypes.push_back(memberType.c_str());
+            memberTypes.push_back(type_for_qual(f->getType()));
             memberNameStrings.push_back(memberName);
             memberNames.push_back(memberName.c_str());
         }
 
         if (rd->isUnion()) {
-            cb.uc(name.c_str(), &memberNames[0], &memberTypes[0], memberTypes.size(), cb.user_data);
+            cb.uc(name.c_str(), &memberTypes[0], &memberNames[0], memberTypes.size(), cb.user_data);
         } else {
-            cb.sc(name.c_str(), &memberNames[0], &memberTypes[0], memberTypes.size(), cb.user_data);
+            cb.sc(name.c_str(), &memberTypes[0], &memberNames[0], memberTypes.size(), cb.user_data);
         }
 
         return true;
@@ -286,6 +279,86 @@ public:
 private:
     callbacks &cb;
 };
+
+static FFITypeRef type_for_qual(QualType qt)
+{
+    FFITypeRef returnTy;
+
+    if (qt->isVoidType()) {
+        returnTy.type = FFITypeRef::VOID_REF;
+    } else if (qt->isPointerType()) {
+        // LEAK
+        FFITypeRef *pointee = new FFITypeRef { type_for_qual(qt->getPointeeType()) };
+
+        returnTy.type = FFITypeRef::POINTER_REF;
+        returnTy.point_type.pointed_type = pointee;
+    } else if (qt->isEnumeralType()) {
+        const EnumDecl *ed = qt->castAs<EnumType>()->getDecl();
+
+        std::string name = ed->getNameAsString();
+        if (name.size() == 0)
+            name = ed->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
+
+        returnTy.type = FFITypeRef::ENUM_REF;
+        returnTy.enum_type.name = strdup(name.c_str()); // LEAK
+    } else if (qt->isRecordType()) {
+        const RecordDecl *rd = qt->castAs<RecordType>()->getDecl();
+
+        std::string name = rd->getNameAsString();
+        if (name.size() == 0)
+            name = rd->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
+
+        if (qt->isUnionType()) {
+            returnTy.type = FFITypeRef::UNION_REF;
+            returnTy.union_type.name = strdup(name.c_str()); // LEAK
+        } else {
+            returnTy.type = FFITypeRef::STRUCT_REF;
+            returnTy.struct_type.name = strdup(name.c_str()); // LEAK
+        }
+    } else if (qt->isFunctionProtoType()) {
+        const FunctionProtoType *ft = qt->castAs<FunctionProtoType>();
+
+        FFITypeRef *ret_type = new FFITypeRef { type_for_qual(ft->getReturnType()) }; // LEAK
+        std::vector<FFITypeRef> *param_types = new std::vector<FFITypeRef>; // LEAK
+        for (size_t i = 0; i < ft->getNumParams(); ++i)
+            param_types->push_back(FFITypeRef { type_for_qual(ft->getParamType(i)) } );
+
+        returnTy.type = FFITypeRef::FUNCTION_REF;
+        returnTy.func_type.return_type = ret_type;
+        returnTy.func_type.param_types = &((*param_types)[0]);
+        returnTy.func_type.num_params = ft->getNumParams();
+    } else if (qt->isFunctionNoProtoType()) {
+        const FunctionNoProtoType *ft = qt->castAs<FunctionNoProtoType>();
+
+        FFITypeRef *ret_type = new FFITypeRef { type_for_qual(ft->getReturnType()) }; // LEAK
+        returnTy.type = FFITypeRef::FUNCTION_REF;
+        returnTy.func_type.return_type = ret_type;
+        returnTy.func_type.param_types = nullptr;
+        returnTy.func_type.num_params = 0;
+    } /*else if (qt->isIntegerType()) {
+        const IntegerType *it = qt->castAs<IntegerType>();
+
+        returnTy.type = FFITypeRef::INTEGER_REF;
+        returnTy.int_type.width = it->getBitWidth();
+    }*/ else {
+        fprintf(stderr, "unknown type %s", qt.getAsString().c_str());
+        abort();
+    }
+
+    return returnTy;
+}
+
+static void get_types_for_func(FunctionDecl *fd, FFITypeRef &returnTy, std::vector<FFITypeRef> &paramTys)
+{
+    returnTy = type_for_qual(fd->getReturnType());
+
+    const FunctionProtoType *ft = fd->getType()->getAs<FunctionProtoType>();
+    if (ft) {
+        for (size_t i = 0; i < ft->getNumParams(); ++i)
+            paramTys.push_back(FFITypeRef { type_for_qual(ft->getParamType(i)) });
+    }
+}
+
 
 void walk_file(const char *filename, const char **clangArgs, int argc, callbacks *c)
 {
