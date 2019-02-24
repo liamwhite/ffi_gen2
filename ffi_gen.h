@@ -48,7 +48,8 @@ struct FFITypeRef {
         STRUCT_REF,
         UNION_REF,
         FUNCTION_REF,
-        INTEGER_REF,
+        SINTEGER_REF,
+        UINTEGER_REF,
         FLOAT_REF,
         POINTER_REF,
         VOID_REF

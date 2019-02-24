@@ -10,7 +10,8 @@ module FFIGen
     :struct_ref,
     :union_ref,
     :function_ref,
-    :integer_ref,
+    :sinteger_ref,
+    :uinteger_ref,
     :float_ref,
     :pointer_ref,
     :void_ref

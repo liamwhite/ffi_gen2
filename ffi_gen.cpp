@@ -335,13 +335,89 @@ static FFITypeRef type_for_qual(QualType qt)
         returnTy.func_type.return_type = ret_type;
         returnTy.func_type.param_types = nullptr;
         returnTy.func_type.num_params = 0;
-    } /*else if (qt->isIntegerType()) {
-        const IntegerType *it = qt->castAs<IntegerType>();
+    } else if (qt->isBuiltinType()) {
+        const BuiltinType *bt = qt->castAs<BuiltinType>();
 
-        returnTy.type = FFITypeRef::INTEGER_REF;
-        returnTy.int_type.width = it->getBitWidth();
-    }*/ else {
-        fprintf(stderr, "unknown type %s", qt.getAsString().c_str());
+        switch (bt->getKind()) {
+        case BuiltinType::Kind::Bool:
+            returnTy.type = FFITypeRef::UINTEGER_REF;
+            returnTy.int_type.width = 1;
+            break;
+
+        case BuiltinType::Kind::Char_U:
+        case BuiltinType::Kind::UChar:
+            returnTy.type = FFITypeRef::UINTEGER_REF;
+            returnTy.int_type.width = 8;
+            break;
+
+        case BuiltinType::Kind::Char8:
+        case BuiltinType::Kind::Char_S:
+        case BuiltinType::Kind::SChar:
+            returnTy.type = FFITypeRef::SINTEGER_REF;
+            returnTy.int_type.width = 8;
+            break;
+
+        case BuiltinType::Kind::WChar_U:
+        case BuiltinType::Kind::UShort:
+            returnTy.type = FFITypeRef::UINTEGER_REF;
+            returnTy.int_type.width = 16;
+            break;
+
+        case BuiltinType::Kind::WChar_S:
+        case BuiltinType::Kind::Char16:
+        case BuiltinType::Kind::Short:
+            returnTy.type = FFITypeRef::SINTEGER_REF;
+            returnTy.int_type.width = 16;
+            break;
+
+        case BuiltinType::Kind::Char32:
+        case BuiltinType::Kind::Int:
+            returnTy.type = FFITypeRef::SINTEGER_REF;
+            returnTy.int_type.width = 32;
+            break;
+
+        case BuiltinType::Kind::UInt:
+            returnTy.type = FFITypeRef::UINTEGER_REF;
+            returnTy.int_type.width = 32;
+            break;
+
+        case BuiltinType::Kind::Long:
+        case BuiltinType::Kind::LongLong:
+            returnTy.type = FFITypeRef::SINTEGER_REF;
+            returnTy.int_type.width = 64;
+            break;
+
+        case BuiltinType::Kind::ULong:
+        case BuiltinType::Kind::ULongLong:
+            returnTy.type = FFITypeRef::UINTEGER_REF;
+            returnTy.int_type.width = 64;
+            break;
+
+        case BuiltinType::Kind::Int128:
+            returnTy.type = FFITypeRef::SINTEGER_REF;
+            returnTy.int_type.width = 128;
+            break;
+
+        case BuiltinType::Kind::Float:
+            returnTy.type = FFITypeRef::FLOAT_REF;
+            returnTy.float_type.width = 32;
+            break;
+
+        case BuiltinType::Kind::Double:
+            returnTy.type = FFITypeRef::FLOAT_REF;
+            returnTy.float_type.width = 64;
+            break;
+
+        case BuiltinType::Kind::LongDouble:
+            returnTy.type = FFITypeRef::FLOAT_REF;
+            returnTy.float_type.width = 80;
+            break;
+        default:
+            fprintf(stderr, "unknown type %s\n", qt.getAsString().c_str());
+            abort();
+        };
+    } else {
+        fprintf(stderr, "unknown type %s\n", qt.getAsString().c_str());
         abort();
     }
 
