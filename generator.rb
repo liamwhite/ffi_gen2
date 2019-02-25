@@ -139,7 +139,6 @@ class Generator
   end
 
   def resolve_union_ref(type)
-    # byebug
     union_type = type[:kind][:union_type]
 
     if union_type[:anonymous] != 0

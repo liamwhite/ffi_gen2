@@ -80,8 +80,10 @@ public:
                 std::vector<Token> tokens = fixMacrosRecursive(p, m.second);
                 std::string tokenPaste;
 
-                for (auto &t : tokens)
+                for (auto &t : tokens) {
                     tokenPaste.append(p.getSpelling(t));
+                    tokenPaste.append(" ");
+                }
 
                 cb.mc(m.first.c_str(), tokenPaste.c_str(), cb.user_data);
             } catch (std::invalid_argument &ex) {
@@ -91,7 +93,7 @@ public:
     }
 
 private:
-    std::vector<Token> fixMacrosRecursive(Preprocessor &p, std::vector<Token> input)
+    std::vector<Token> fixMacrosRecursive(Preprocessor &p, std::vector<Token> input, size_t recursionNum = 0)
     {
         std::vector<Token> ret;
 
@@ -107,7 +109,7 @@ private:
             i  = t.getIdentifierInfo();
             mi = p.getMacroInfo(i);
 
-            if (!mi) {
+            if (!mi || recursionNum > 5) {
                 ret.push_back(t);
                 continue;
             }
@@ -123,7 +125,7 @@ private:
             for (auto &k : mi->tokens())
                 childTokens.push_back(k);
 
-            childTokens = fixMacrosRecursive(p, childTokens);
+            childTokens = fixMacrosRecursive(p, childTokens, recursionNum + 1);
 
             for (auto &k : childTokens)
                 ret.push_back(k);
