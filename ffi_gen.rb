@@ -33,6 +33,7 @@ module FFIGen
     :float_ref,
     :pointer_ref,
     :array_ref,
+    :flex_ref,
     :void_ref
   ]
 
@@ -57,6 +58,10 @@ module FFIGen
     layout :return_type, FFITypeRef.by_ref,
            :param_types, FFITypeRef.by_ref,
            :num_params, :size_t
+  end
+
+  class FFIFlexRef < FFI::Struct
+    layout :type, FFITypeRef.by_ref
   end
 
   class FFIArrayRef < FFI::Struct
@@ -100,6 +105,7 @@ module FFIGen
            :int_type, FFIIntegerRef.by_value,
            :float_type, FFIFloatRef.by_value,
            :array_type, FFIArrayRef.by_value,
+           :flex_type, FFIFlexRef.by_value,
            :point_type, FFIPointerRef.by_value
   end
 

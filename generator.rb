@@ -1,5 +1,4 @@
 require 'ffi_gen'
-require 'byebug'
 
 class Generator
   attr_reader :macros
@@ -127,6 +126,7 @@ class Generator
     when :integer_ref then type[:kind][:int_type][:type]
     when :float_ref then type[:kind][:int_type][:type]
     when :array_ref then [:array, resolve_type_ref(type[:kind][:array_type][:type]), type[:kind][:array_type][:size]]
+    when :flex_ref then [:flex, resolve_type_ref(type[:kind][:array_type][:type])]
     when :void_ref then :void
     when :function_ref then resolve_func_ref(type)
     when :pointer_ref

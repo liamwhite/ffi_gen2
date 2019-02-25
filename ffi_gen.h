@@ -39,6 +39,7 @@ enum FFIRefType {
     FLOAT_REF,
     POINTER_REF,
     ARRAY_REF,
+    FLEX_REF,
     VOID_REF
 };
 
@@ -56,11 +57,13 @@ struct FFIFunctionRef {
     size_t num_params;
 };
 
+struct FFIFlexRef {
+    struct FFITypeRef *type; ///< Type of the flexible array
+};
+
 struct FFIArrayRef {
     struct FFITypeRef *type;
     size_t size;
-    // no flexible member support, clang
-    // does not allow this to compile
 };
 
 struct FFIEnumMember {
@@ -108,6 +111,7 @@ struct FFITypeRef {
         struct FFIIntegerRef int_type;
         struct FFIFloatRef float_type;
         struct FFIArrayRef array_type;
+        struct FFIFlexRef flex_type;
         struct FFIPointerRef point_type;
     };
 };

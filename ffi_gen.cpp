@@ -420,6 +420,11 @@ static FFITypeRef type_for_qual(QualType qt, ASTContext *ctx)
         returnTy.type = FFIRefType::ARRAY_REF;
         returnTy.array_type.type = var_type;
         returnTy.array_type.size = at->getSize().getZExtValue();
+    } else if (qt->isIncompleteArrayType()) {
+        const IncompleteArrayType *at = ctx->getAsIncompleteArrayType(qt);
+
+        returnTy.type = FFIRefType::FLEX_REF;
+        returnTy.flex_type.type = new FFITypeRef { type_for_qual(at->getElementType(), ctx) }; // LEAK
     } else if (qt->isBuiltinType()) {
         const BuiltinType *bt = qt->castAs<BuiltinType>();
 
