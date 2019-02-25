@@ -1,5 +1,4 @@
 require 'ffi'
-require 'byebug'
 
 module FFIGen
   extend FFI::Library
@@ -108,42 +107,36 @@ module FFIGen
   # typedef void (*union_callback)(const char *name, FFITypeRef *member_types, const char **member_names, size_t num_members, void *data);
   callback :union_callback, [:string, FFITypeRef.by_ref, :pointer, :size_t, :pointer], :void
 
+  # typedef void (*variable_callback)(const char *name, struct FFITypeRef *type, void *data);
+  callback :variable_callback, [:string, FFITypeRef.by_ref, :pointer], :void
+
   class Callbacks < FFI::Struct
-    layout :mc, :macro_callback, 8*0,
-           :tc, :typedef_callback, 8*1,
-           :fc, :function_callback, 8*2,
-           :ec, :enum_callback, 8*3,
-           :sc, :struct_callback, 8*4,
-           :uc, :union_callback, 8*5
+    layout :mc, :macro_callback,
+           :tc, :typedef_callback,
+           :fc, :function_callback,
+           :ec, :enum_callback,
+           :sc, :struct_callback,
+           :uc, :union_callback,
+           :vc, :variable_callback,
+           :data, :pointer
   end
 
   # void walk_file(const char *filename, const char **clangArgs, int argc, callbacks c);
   attach_function :walk_file, [:string, :pointer, :int, :pointer], :void
 
-  def self.inspect_file(filename, args)
+  def self.inspect_file(filename, args, callback)
     argv = FFI::MemoryPointer.new(:pointer, args.count)
     args.map!{|a| FFI::MemoryPointer.from_string(a) }
     argv.write_array_of_pointer(args)
 
-    fc = proc do |name, ret, parms, parmc|
-      parms = (0...parmc).map { |i| FFITypeRef.new(parms.to_ptr + i*FFITypeRef.size) }
-      puts ":#{ret[:type]} :#{name} [ #{parms.map { |t| ":#{t[:type]}" }.join(", ") } ]"
-    end
+    cb = Callbacks.new
+    cb[:mc] = callback.method(:define_macro)
+    cb[:tc] = callback.method(:define_typedef)
+    cb[:fc] = callback.method(:define_function)
+    cb[:ec] = callback.method(:define_enum)
+    cb[:sc] = callback.method(:define_struct)
+    cb[:uc] = callback.method(:define_union)
 
-    mc = proc { |name| puts "Emitting macro definition for #{name}" }
-    tc = proc { |name| puts "Emitting typedef definition for #{name}" }
-    ec = proc { |name| puts "Emitting enum definition for #{name}" }
-    sc = proc { |name| puts "Emitting struct definition for #{name}" }
-    uc = proc { |name| puts "Emitting union definition for #{name}" }
-
-    callbacks = Callbacks.new
-    callbacks[:mc] = mc
-    callbacks[:tc] = tc
-    callbacks[:fc] = fc
-    callbacks[:ec] = ec
-    callbacks[:sc] = sc
-    callbacks[:uc] = uc
-
-    walk_file(filename, argv, args.size, callbacks)
+    walk_file(filename, argv, args.size, cb)
   end
 end

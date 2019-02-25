@@ -90,6 +90,7 @@ typedef void (*function_callback)(const char *name, struct FFITypeRef *return_ty
 typedef void (*enum_callback)(const char *name, const char **member_names, int64_t *member_values, size_t num_members, void *data);
 typedef void (*struct_callback)(const char *name, struct FFITypeRef *member_types, const char **member_names, size_t num_members, void *data);
 typedef void (*union_callback)(const char *name, struct FFITypeRef *member_types, const char **member_names, size_t num_members, void *data);
+typedef void (*variable_callback)(const char *name, struct FFITypeRef *type, void *data);
 
 typedef struct {
     macro_callback mc;
@@ -98,6 +99,7 @@ typedef struct {
     enum_callback ec;
     struct_callback sc;
     union_callback uc;
+    variable_callback vc;
     void *user_data;
 } callbacks;
 

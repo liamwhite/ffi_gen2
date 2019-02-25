@@ -158,6 +158,25 @@ public:
         return true;
     }
 
+    virtual bool VisitVarDecl(VarDecl *vd)
+    {
+        // Don't grab variables that aren't in the main file
+        clang::SourceManager &sm { Context->getSourceManager() };
+        if (!sm.isInMainFile(sm.getExpansionLoc(vd->getLocStart())))
+            return true;
+
+        // Don't try to do binding for non-exported variables
+        if (!vd->isExternC())
+            return true;
+
+        std::string name = vd->getNameAsString();
+        FFITypeRef varTy = type_for_qual(vd->getType());
+
+        cb.vc(name.c_str(), &varTy, cb.user_data);
+
+        return true;
+    }
+
     virtual bool VisitEnumDecl(EnumDecl *ed)
     {
         ed = ed->getCanonicalDecl();
@@ -184,9 +203,11 @@ public:
             std::string memberName = d->getNameAsString();
 
             memberNameStrings.push_back(memberName);
-            memberNames.push_back(memberName.c_str());
             memberValues.push_back(d->getInitVal().getExtValue());
         }
+
+        for (auto &s : memberNameStrings)
+            memberNames.push_back(s.c_str());
 
         cb.ec(name.c_str(), &memberNames[0], &memberValues[0], memberValues.size(), cb.user_data);
 
@@ -234,8 +255,10 @@ public:
 
             memberTypes.push_back(type_for_qual(f->getType()));
             memberNameStrings.push_back(memberName);
-            memberNames.push_back(memberName.c_str());
         }
+
+        for (auto &s : memberNameStrings)
+            memberNames.push_back(s.c_str());
 
         if (rd->isUnion()) {
             cb.uc(name.c_str(), &memberTypes[0], &memberNames[0], memberTypes.size(), cb.user_data);
