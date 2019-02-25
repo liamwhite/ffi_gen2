@@ -27,7 +27,7 @@ class Generator
   end
 
   def define_macro(name, definition, _data)
-    @output << [:macro, name, try_evaluate(definition)]
+    @output << [:macro, name.to_sym, try_evaluate(definition)]
   end
 
   def define_typedef(name, type, _data)
@@ -106,6 +106,7 @@ class Generator
     when :union_ref then type[:kind][:union_type][:name].to_sym
     when :integer_ref then type[:kind][:int_type][:type]
     when :float_ref then type[:kind][:int_type][:type]
+    when :array_ref then [:array, resolve_type_ref(type[:kind][:array_type][:type])]
     when :void_ref then :void
     when :function_ref then resolve_func_ref(type)
     when :pointer_ref

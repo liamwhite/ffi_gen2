@@ -37,6 +37,7 @@ enum FFIRefType {
     INTEGER_REF,
     FLOAT_REF,
     POINTER_REF,
+    ARRAY_REF,
     VOID_REF
 };
 
@@ -52,6 +53,13 @@ struct FFIFunctionRef {
     struct FFITypeRef *return_type; ///< Function return type
     struct FFITypeRef *param_types; ///< Types of the formal parameters
     size_t num_params;
+};
+
+struct FFIArrayRef {
+    struct FFITypeRef *type;
+    size_t size;
+    // no flexible member support, clang
+    // does not allow this to compile
 };
 
 struct FFIEnumRef {
@@ -80,6 +88,7 @@ struct FFITypeRef {
         struct FFIFunctionRef func_type;
         struct FFIIntegerRef int_type;
         struct FFIFloatRef float_type;
+        struct FFIArrayRef array_type;
         struct FFIPointerRef point_type;
     };
 };

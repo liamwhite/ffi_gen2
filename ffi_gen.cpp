@@ -21,8 +21,8 @@ using namespace clang::driver;
 using namespace clang::tooling;
 using namespace llvm;
 
-static FFITypeRef type_for_qual(QualType qt);
-static void get_types_for_func(FunctionDecl *fd, FFITypeRef &returnTy, std::vector<FFITypeRef> &paramTys);
+static FFITypeRef type_for_qual(QualType qt, ASTContext *ctx);
+static void get_types_for_func(FunctionDecl *fd, FFITypeRef &returnTy, std::vector<FFITypeRef> &paramTys, ASTContext *ctx);
 
 class GetMacros : public PPCallbacks
 {
@@ -151,7 +151,7 @@ public:
         std::string funcName = func->getNameInfo().getName().getAsString();
         std::vector<FFITypeRef> paramTys;
 
-        get_types_for_func(func, returnTy, paramTys);
+        get_types_for_func(func, returnTy, paramTys, Context);
 
         cb.fc(funcName.c_str(), &returnTy, &paramTys[0], paramTys.size(), cb.user_data);
 
@@ -170,7 +170,7 @@ public:
             return true;
 
         std::string name = vd->getNameAsString();
-        FFITypeRef varTy = type_for_qual(vd->getType());
+        FFITypeRef varTy = type_for_qual(vd->getType(), Context);
 
         cb.vc(name.c_str(), &varTy, cb.user_data);
 
@@ -222,7 +222,7 @@ public:
             return true;
 
         std::string aliasName = td->getNameAsString();
-        FFITypeRef type = type_for_qual(td->getUnderlyingType());
+        FFITypeRef type = type_for_qual(td->getUnderlyingType(), Context);
 
         cb.tc(aliasName.c_str(), &type, cb.user_data);
 
@@ -253,7 +253,7 @@ public:
         for (auto f : rd->fields()) {
             std::string memberName = f->getNameAsString();
 
-            memberTypes.push_back(type_for_qual(f->getType()));
+            memberTypes.push_back(type_for_qual(f->getType(), Context));
             memberNameStrings.push_back(memberName);
         }
 
@@ -303,7 +303,7 @@ private:
     callbacks &cb;
 };
 
-static FFITypeRef type_for_qual(QualType qt)
+static FFITypeRef type_for_qual(QualType qt, ASTContext *ctx)
 {
     FFITypeRef returnTy;
 
@@ -311,7 +311,7 @@ static FFITypeRef type_for_qual(QualType qt)
         returnTy.type = FFIRefType::VOID_REF;
     } else if (qt->isPointerType()) {
         // LEAK
-        FFITypeRef *pointee = new FFITypeRef { type_for_qual(qt->getPointeeType()) };
+        FFITypeRef *pointee = new FFITypeRef { type_for_qual(qt->getPointeeType(), ctx) };
 
         returnTy.type = FFIRefType::POINTER_REF;
         returnTy.point_type.pointed_type = pointee;
@@ -341,10 +341,10 @@ static FFITypeRef type_for_qual(QualType qt)
     } else if (qt->isFunctionProtoType()) {
         const FunctionProtoType *ft = qt->castAs<FunctionProtoType>();
 
-        FFITypeRef *ret_type = new FFITypeRef { type_for_qual(ft->getReturnType()) }; // LEAK
+        FFITypeRef *ret_type = new FFITypeRef { type_for_qual(ft->getReturnType(), ctx) }; // LEAK
         std::vector<FFITypeRef> *param_types = new std::vector<FFITypeRef>; // LEAK
         for (size_t i = 0; i < ft->getNumParams(); ++i)
-            param_types->push_back(FFITypeRef { type_for_qual(ft->getParamType(i)) } );
+            param_types->push_back(FFITypeRef { type_for_qual(ft->getParamType(i), ctx) } );
 
         returnTy.type = FFIRefType::FUNCTION_REF;
         returnTy.func_type.return_type = ret_type;
@@ -353,11 +353,18 @@ static FFITypeRef type_for_qual(QualType qt)
     } else if (qt->isFunctionNoProtoType()) {
         const FunctionNoProtoType *ft = qt->castAs<FunctionNoProtoType>();
 
-        FFITypeRef *ret_type = new FFITypeRef { type_for_qual(ft->getReturnType()) }; // LEAK
+        FFITypeRef *ret_type = new FFITypeRef { type_for_qual(ft->getReturnType(), ctx) }; // LEAK
         returnTy.type = FFIRefType::FUNCTION_REF;
         returnTy.func_type.return_type = ret_type;
         returnTy.func_type.param_types = nullptr;
         returnTy.func_type.num_params = 0;
+    } else if (qt->isConstantArrayType()) {
+        const ConstantArrayType *at = ctx->getAsConstantArrayType(qt);
+
+        FFITypeRef *var_type = new FFITypeRef { type_for_qual(at->getElementType(), ctx) }; // LEAK
+        returnTy.type = FFIRefType::ARRAY_REF;
+        returnTy.array_type.type = var_type;
+        returnTy.array_type.size = at->getSize().getZExtValue();
     } else if (qt->isBuiltinType()) {
         const BuiltinType *bt = qt->castAs<BuiltinType>();
 
@@ -447,14 +454,14 @@ static FFITypeRef type_for_qual(QualType qt)
     return returnTy;
 }
 
-static void get_types_for_func(FunctionDecl *fd, FFITypeRef &returnTy, std::vector<FFITypeRef> &paramTys)
+static void get_types_for_func(FunctionDecl *fd, FFITypeRef &returnTy, std::vector<FFITypeRef> &paramTys, ASTContext *ctx)
 {
-    returnTy = type_for_qual(fd->getReturnType());
+    returnTy = type_for_qual(fd->getReturnType(), ctx);
 
     const FunctionProtoType *ft = fd->getType()->getAs<FunctionProtoType>();
     if (ft) {
         for (size_t i = 0; i < ft->getNumParams(); ++i)
-            paramTys.push_back(FFITypeRef { type_for_qual(ft->getParamType(i)) });
+            paramTys.push_back(FFITypeRef { type_for_qual(ft->getParamType(i), ctx) });
     }
 }
 
