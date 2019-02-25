@@ -63,18 +63,32 @@ struct FFIArrayRef {
     // does not allow this to compile
 };
 
+struct FFIEnumMember {
+    char *name;
+    int64_t value;
+};
+
 struct FFIEnumRef {
     char *name;
     int anonymous;
 };
 
+struct FFIRecordMember {
+    char *name; ///< Will be null if anonymous struct/union
+    struct FFITypeRef *type;
+};
+
 struct FFIStructRef {
     char *name;
+    struct FFIRecordMember *members;
+    size_t num_members;
     int anonymous;
 };
 
 struct FFIUnionRef {
     char *name;
+    struct FFIRecordMember *members;
+    size_t num_members;
     int anonymous;
 };
 

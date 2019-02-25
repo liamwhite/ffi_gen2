@@ -68,13 +68,22 @@ module FFIGen
            :anonymous, :int
   end
 
+  class FFIRecordMember < FFI::Struct
+    layout :name, :string,
+           :type, FFITypeRef.by_ref
+  end
+
   class FFIStructRef < FFI::Struct
     layout :name, :string,
+           :members, FFIRecordMember.by_ref,
+           :num_members, :size_t,
            :anonymous, :int
   end
 
   class FFIUnionRef < FFI::Struct
     layout :name, :string,
+           :members, FFIRecordMember.by_ref,
+           :num_members, :size_t,
            :anonymous, :int
   end
 

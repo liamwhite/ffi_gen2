@@ -1,4 +1,5 @@
 require 'ffi_gen'
+require 'byebug'
 
 class Generator
   attr_reader :macros
@@ -116,9 +117,9 @@ class Generator
 
   def resolve_type_ref(type)
     case type[:type]
-    when :enum_ref then type[:kind][:enum_type][:name].to_sym
-    when :struct_ref then type[:kind][:struct_type][:name].to_sym
-    when :union_ref then type[:kind][:union_type][:name].to_sym
+    when :enum_ref then (type[:kind][:enum_type][:name] || :int64).to_sym
+    when :struct_ref then resolve_struct_ref(type)
+    when :union_ref then resolve_union_ref(type)
     when :integer_ref then type[:kind][:int_type][:type]
     when :float_ref then type[:kind][:int_type][:type]
     when :array_ref then [:array, resolve_type_ref(type[:kind][:array_type][:type]), type[:kind][:array_type][:size]]
@@ -130,6 +131,33 @@ class Generator
       else
         :pointer
       end
+    end
+  end
+
+  def resolve_union_ref(type)
+    # byebug
+    union_type = type[:kind][:union_type]
+
+    if union_type[:anonymous] != 0
+      member_records = read_array_of_recordmember(union_type[:members], union_type[:num_members]).map(&:values)
+      member_records.map! { |name, type| [name.to_sym, resolve_type_ref(type)] }
+
+      [:anonymous_union, member_records]
+    else
+      union_type[:name].to_sym
+    end
+  end
+
+  def resolve_struct_ref(type)
+    struct_type = type[:kind][:struct_type]
+
+    if struct_type[:anonymous] != 0
+      member_records = read_array_of_recordmember(struct_type[:members], struct_type[:num_members]).map(&:values)
+      member_records.map! { |name, type| [name.to_sym, resolve_type_ref(type)] }
+
+      [:anonymous_struct, member_records]
+    else
+      struct_type[:name].to_sym
     end
   end
 
@@ -146,6 +174,14 @@ class Generator
 
     (0...num).map do |i|
       FFIGen::FFITypeRef.new(base_ptr + i*FFIGen::FFITypeRef.size)
+    end
+  end
+
+  def read_array_of_recordmember(base_ptr, num)
+    base_ptr = base_ptr.to_ptr
+
+    (0...num).map do |i|
+      FFIGen::FFIRecordMember.new(base_ptr + i*FFIGen::FFIRecordMember.size)
     end
   end
 end

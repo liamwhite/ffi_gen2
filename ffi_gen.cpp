@@ -328,14 +328,38 @@ static FFITypeRef type_for_qual(QualType qt, ASTContext *ctx)
             returnTy.enum_type.name = strdup(name.c_str()); // LEAK
             returnTy.enum_type.anonymous = 0;            
         } else {
+            returnTy.enum_type.name = NULL;
             returnTy.enum_type.anonymous = 1;
         }
     } else if (qt->isRecordType()) {
         const RecordDecl *rd = qt->castAs<RecordType>()->getDecl();
 
         std::string name;
+        std::vector<FFIRecordMember> *members = NULL;
 
-        if (rd->hasNameForLinkage()) {
+        if (rd->isAnonymousStructOrUnion()) {
+            // Only add fields in an anonymous record!
+            members = new std::vector<FFIRecordMember>; // LEAK
+            std::vector<FFITypeRef> *memberTypes = new std::vector<FFITypeRef>; // LEAK
+            std::vector<std::string> memberNames;
+
+            for (auto f : rd->fields()) {
+                FFITypeRef type = type_for_qual(f->getType(), ctx);
+                std::string memberName = f->getNameAsString();
+
+                memberTypes->push_back(type);
+                memberNames.push_back(memberName);
+            }
+
+            for (size_t i = 0; i < memberNames.size(); ++i) {
+                FFIRecordMember m;
+                if (memberNames[i].size() > 0)
+                    m.name = strdup(memberNames[i].c_str()); // LEAK
+                m.type = &((*memberTypes)[i]);
+
+                members->push_back(m);
+            }
+        } else {
             name = rd->getNameAsString();
             if (name.size() == 0)
                 name = rd->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
@@ -343,12 +367,26 @@ static FFITypeRef type_for_qual(QualType qt, ASTContext *ctx)
 
         if (qt->isUnionType()) {
             returnTy.type = FFIRefType::UNION_REF;
-            returnTy.union_type.anonymous = !rd->hasNameForLinkage();
+            returnTy.union_type.anonymous = rd->isAnonymousStructOrUnion();
+            returnTy.union_type.members = NULL;
+            returnTy.union_type.num_members = 0;
+            returnTy.union_type.name = NULL;
+            if (members) {
+                returnTy.union_type.members = &((*members)[0]);
+                returnTy.union_type.num_members = members->size();
+            }
             if (name.size() > 0)
                 returnTy.union_type.name = strdup(name.c_str()); // LEAK
         } else {
             returnTy.type = FFIRefType::STRUCT_REF;
-            returnTy.struct_type.anonymous = !rd->hasNameForLinkage();
+            returnTy.struct_type.anonymous = rd->isAnonymousStructOrUnion();
+            returnTy.struct_type.members = NULL;
+            returnTy.struct_type.num_members = 0;
+            returnTy.struct_type.name = NULL;
+            if (members) {
+                returnTy.struct_type.members = &((*members)[0]);
+                returnTy.struct_type.num_members = members->size();
+            }
             if (name.size() > 0)
                 returnTy.struct_type.name = strdup(name.c_str()); // LEAK
         }
