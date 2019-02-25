@@ -23,6 +23,7 @@ class Generator
 
   def initialize
     @known_types = BUILTIN_TYPES.dup.map{|x| [x, :builtin] }.to_h
+    @variables = {}
     @output = []
   end
 
@@ -31,32 +32,46 @@ class Generator
   end
 
   def define_typedef(name, type, _data)
-    @known_types[name.to_sym] = :typedef
-    @output << [:typedef, name.to_sym, resolve_type_ref(type)]
+    @known_types[name.to_sym] ||= begin
+      @output << [:typedef, name.to_sym, resolve_type_ref(type)]
+     :typedef
+    end
   end
 
   def define_enum(name, member_names, member_values, num_members, _data)
-    @known_types[name.to_sym] = :enum
-    @output << [:enum, untypedef_name(name), enum_members(member_names, member_values, num_members)]
+    @known_types[name.to_sym] ||= begin
+      @output << [:enum, untypedef_name(name), enum_members(member_names, member_values, num_members)]
+     :enum
+    end
   end
 
   def define_struct(name, member_types, member_names, num_members, _data)
-    @known_types[name.to_sym] = :struct
-    @output << [:struct, untypedef_name(name), resolve_record_types(member_types, member_names, num_members)]
+    @known_types[name.to_sym] ||= begin
+      @output << [:struct, untypedef_name(name), resolve_record_types(member_types, member_names, num_members)]
+      :struct
+    end
   end
 
   def define_union(name, member_types, member_names, num_members, _data)
-    @known_types[name.to_sym] = :union
-    @output << [:union, untypedef_name(name), resolve_record_types(member_types, member_names, num_members)]
+    @known_types[name.to_sym] ||= begin
+      @output << [:union, untypedef_name(name), resolve_record_types(member_types, member_names, num_members)]
+      :union
+    end
   end
 
   def define_function(name, return_type, parameters, num_params, _data)
-    @known_types[name.to_sym] = :function
-    @output << [:function, name.to_sym, resolve_function_params(parameters, num_params), resolve_type_ref(return_type)]
+    @known_types[name.to_sym] ||= begin
+      @output << [:function, name.to_sym, resolve_function_params(parameters, num_params), resolve_type_ref(return_type)]
+      :function
+    end
   end
 
   def define_variable(name, type, _data)
-    @output << [:variable, name.to_sym, resolve_type(type)]
+    @variables[name.to_sym] ||= begin
+      type = resolve_type(type)
+      @output << [:variable, name.to_sym, type]
+      type
+    end
   end
 
   private
