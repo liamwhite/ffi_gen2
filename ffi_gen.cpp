@@ -306,6 +306,7 @@ private:
 static FFITypeRef type_for_qual(QualType qt, ASTContext *ctx)
 {
     FFITypeRef returnTy;
+    returnTy.qual_name = strdup(qt.getAsString().c_str()); // LEAK
 
     if (qt->isVoidType()) {
         returnTy.type = FFIRefType::VOID_REF;

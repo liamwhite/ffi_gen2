@@ -38,6 +38,7 @@ module FFIGen
 
   class FFITypeRef < FFI::Struct
     layout :type, :FFIRefType,
+           :qual_name, :string,
            :kind, :pointer
   end
 
@@ -105,6 +106,7 @@ module FFIGen
   # Redefinition to pick up the now-defined FFITypeUnion type
   class FFITypeRef
     layout :type, :FFIRefType,
+           :qual_name, :string,
            :kind, FFITypeUnion.by_value
   end
 

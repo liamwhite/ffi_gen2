@@ -98,6 +98,7 @@ struct FFIPointerRef {
 
 struct FFITypeRef {
     enum FFIRefType type;
+    char *qual_name; ///< Qualified (typedef) name
 
     union {
         struct FFIEnumRef enum_type;

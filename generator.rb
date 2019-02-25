@@ -116,6 +116,10 @@ class Generator
   end
 
   def resolve_type_ref(type)
+    if @known_types[type[:qual_name].to_sym]
+      return type[:qual_name].to_sym
+    end
+
     case type[:type]
     when :enum_ref then (type[:kind][:enum_type][:name] || :int64).to_sym
     when :struct_ref then resolve_struct_ref(type)
