@@ -1,6 +1,7 @@
 #ifndef _INCLUDE_TOOL_H_
 #define _INCLUDE_TOOL_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -64,14 +65,17 @@ struct FFIArrayRef {
 
 struct FFIEnumRef {
     char *name;
+    int anonymous;
 };
 
 struct FFIStructRef {
     char *name;
+    int anonymous;
 };
 
 struct FFIUnionRef {
     char *name;
+    int anonymous;
 };
 
 struct FFIPointerRef {

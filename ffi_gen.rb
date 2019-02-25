@@ -64,15 +64,18 @@ module FFIGen
   end
 
   class FFIEnumRef < FFI::Struct
-    layout :name, :string
+    layout :name, :string,
+           :anonymous, :int
   end
 
   class FFIStructRef < FFI::Struct
-    layout :name, :string
+    layout :name, :string,
+           :anonymous, :int
   end
 
   class FFIUnionRef < FFI::Struct
-    layout :name, :string
+    layout :name, :string,
+           :anonymous, :int
   end
 
   class FFIPointerRef < FFI::Struct

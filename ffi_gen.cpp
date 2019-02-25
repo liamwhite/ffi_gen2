@@ -318,25 +318,39 @@ static FFITypeRef type_for_qual(QualType qt, ASTContext *ctx)
     } else if (qt->isEnumeralType()) {
         const EnumDecl *ed = qt->castAs<EnumType>()->getDecl();
 
-        std::string name = ed->getNameAsString();
-        if (name.size() == 0)
-            name = ed->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
-
         returnTy.type = FFIRefType::ENUM_REF;
-        returnTy.enum_type.name = strdup(name.c_str()); // LEAK
+
+        if (ed->hasNameForLinkage()) {
+            std::string name = ed->getNameAsString();
+            if (name.size() == 0)
+                name = ed->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
+
+            returnTy.enum_type.name = strdup(name.c_str()); // LEAK
+            returnTy.enum_type.anonymous = 0;            
+        } else {
+            returnTy.enum_type.anonymous = 1;
+        }
     } else if (qt->isRecordType()) {
         const RecordDecl *rd = qt->castAs<RecordType>()->getDecl();
 
-        std::string name = rd->getNameAsString();
-        if (name.size() == 0)
-            name = rd->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
+        std::string name;
+
+        if (rd->hasNameForLinkage()) {
+            name = rd->getNameAsString();
+            if (name.size() == 0)
+                name = rd->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
+        }
 
         if (qt->isUnionType()) {
             returnTy.type = FFIRefType::UNION_REF;
-            returnTy.union_type.name = strdup(name.c_str()); // LEAK
+            returnTy.union_type.anonymous = !rd->hasNameForLinkage();
+            if (name.size() > 0)
+                returnTy.union_type.name = strdup(name.c_str()); // LEAK
         } else {
             returnTy.type = FFIRefType::STRUCT_REF;
-            returnTy.struct_type.name = strdup(name.c_str()); // LEAK
+            returnTy.struct_type.anonymous = !rd->hasNameForLinkage();
+            if (name.size() > 0)
+                returnTy.struct_type.name = strdup(name.c_str()); // LEAK
         }
     } else if (qt->isFunctionProtoType()) {
         const FunctionProtoType *ft = qt->castAs<FunctionProtoType>();
