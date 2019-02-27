@@ -187,4 +187,268 @@ class Generator
       FFIGen::FFIRecordMember.new(base_ptr + i*FFIGen::FFIRecordMember.size)
     end
   end
+
+  class OutputContext
+    def initialize
+      @known_types = {}
+      @output = []
+    end
+
+    def known?(name)
+      @known_types.key?(name)
+    end
+
+    def declare_type(name)
+      @known_types[name] = true
+    end
+
+    def emit(ruby)
+      @output << ruby
+    end
+  end
+
+  class RecordMember
+    attr_reader :name, :child
+
+    def initialize(name, child)
+      @name = name
+      @child = child
+    end
+  end
+
+  class Node
+  end
+
+  class MacroNode < Node
+    def initialize(ctx, name, definition)
+      @ctx = ctx
+      @name = name
+      @definition = definition
+    end
+
+    def to_ffi
+      "#{@name.upcase} = 1 # placeholder"
+    end
+  end
+
+  class StructDeclNode < Node
+    def initialize(ctx, name, members)
+      @ctx = ctx
+      @name = name
+      @members = members
+    end
+
+    def to_ffi
+      @ctx.declare_type(name)
+
+      member_names = @members.map { |m| m.name || anonymous_name }
+      member_types = @members.map { |m| m.child.to_param }
+
+      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, t" }.join(",")
+
+      <<-RUBY
+        class #{@name} < FFI::Struct
+          layout #{member_string}
+        end
+      RUBY
+    end
+
+    def anonymous_name
+      @count ||= 0
+      "field#{@count += 1}"
+    end
+  end
+
+  class UnionDeclNode < Node
+    def initialize(ctx, name, members)
+      @ctx = ctx
+      @name = name
+      @members = members
+    end
+
+    def to_ffi
+      @ctx.declare_type(name)
+
+      member_names = @members.map { |m| m.name || anonymous_name }
+      member_types = @members.map { |m| m.child.to_param }
+
+      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, t" }.join(",")
+
+      <<-RUBY
+        class #{@name} < FFI::Union
+          layout #{member_string}
+        end
+      RUBY
+    end
+
+    def anonymous_name
+      @count ||= 0
+      "field#{@count += 1}"
+    end
+  end
+
+  class FunctionDeclNode < Node
+    def initialize(ctx, name, return_type, params)
+      @ctx = ctx
+      @name = name
+      @return_type = return_type
+      @parameters = params
+    end
+
+    def to_ffi
+      <<-RUBY
+        attach_function :#{@name}, [#{@parameters.map(&:to_param)}], #{@return_type.to_param}
+      RUBY
+    end
+  end
+
+  class TypedefDeclNode < Node
+    def initialize(ctx, name, type)
+      @ctx = ctx
+      @name = name
+      @type = type
+    end
+
+    def to_ffi
+      @ctx.declare_type(name)
+
+      <<-RUBY
+        typedef #{@type.to_param}, :#{@name}
+      RUBY
+    end
+  end
+
+  class VariableDeclNode < Node
+    def initialize(ctx, name, type)
+      @ctx = ctx
+      @name = name
+      @type = type
+    end
+
+    def to_ffi
+      <<-RUBY
+        attach_variable :#{@name}, #{@type.to_param}
+      RUBY
+    end
+  end
+
+  class StructTypeNode < Node
+    def initialize(ctx, name, members)
+      @ctx = ctx
+      @name = name
+      @members = members
+    end
+
+    def to_param
+      if @name.nil?
+        @name = @ctx.generate_anonymous_name("UnnamedStruct")
+      end
+
+      emit_definition
+
+      "#{@name}.by_value"
+    end
+
+    def emit_definition
+      member_names = members.map { |m| m.name || anonymous_name }
+      member_types = members.map { |m| m.child.to_param }
+
+      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, t" }.join(",")
+
+      @ctx.emit <<-RUBY
+        class #{@name} < FFI::Struct
+          layout #{member_string}
+        end
+      RUBY
+    end
+
+    def anonymous_name
+      @count ||= 0
+      "field#{@count += 1}"
+    end
+  end
+
+  class UnionTypeNode < Node
+    def initialize(ctx, name, members)
+      @ctx = ctx
+      @name = name
+      @members = members
+    end
+
+    def to_param
+      if @name.nil?
+        @name = @ctx.generate_anonymous_name("UnnamedUnion")
+      end
+
+      emit_definition
+
+      "#{@name}.by_value"
+    end
+
+    def emit_definition
+      member_names = @members.map { |m| m.name || anonymous_name }
+      member_types = @members.map { |m| m.child.to_param }
+
+      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, t" }.join(",")
+
+      @ctx.emit <<-RUBY
+        class #{@name} < FFI::Union
+          layout #{member_string}
+        end
+      RUBY
+    end
+
+    def anonymous_name
+      @count ||= 0
+      "field#{@count += 1}"
+    end
+  end
+
+  class FunctionTypeNode < Node
+    def initialize(ctx, return_type, param_types)
+      @ctx = ctx
+      @return_type = return_type
+      @param_types = param_types
+    end
+
+    def to_param
+      return_type = @return_type.to_param
+      param_types = @param_types.map { |t| t.to_param }
+
+      "callback([#{param_types.map(&:to_param).join(",")}], #{return_type})"
+    end
+  end
+
+  class BuiltinTypeNode < Node
+    def initialize(ctx, type)
+      @ctx = ctx
+      @type = type
+    end
+
+    def to_param
+      ":#{@type}"
+    end
+  end
+
+  class TypedefTypeNode < Node
+    def initialize(ctx, name)
+      @ctx = ctx
+      @name = name
+    end
+
+    def to_param
+      ":#{@type}"
+    end
+  end
+
+  class UnknownTypePoisonNode < Node
+    def initialize(name)
+      @ctx = ctx
+      @name = name
+    end
+
+    def to_param
+      fail ArgumentError, "Tried to use type #{@name} by value, but missing definition for that type"
+    end
+  end
 end

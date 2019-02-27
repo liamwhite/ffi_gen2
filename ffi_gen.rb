@@ -38,9 +38,9 @@ module FFIGen
   ]
 
   class FFITypeRef < FFI::Struct
-    layout :type, :FFIRefType,
-           :qual_name, :string,
-           :kind, :pointer
+    #layout :type, :FFIRefType,
+    #       :qual_name, :string,
+    #       :kind, :pointer
   end
 
   class FFIVoidRef < FFI::Struct
