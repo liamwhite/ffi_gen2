@@ -13,6 +13,7 @@ module FFIGen
     :int16,
     :uint32,
     :int32,
+    :uint64,
     :int64,
     :int128
   ]

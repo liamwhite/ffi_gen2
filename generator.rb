@@ -219,6 +219,7 @@ class Generator
       @known_types = {}
       @known_symbols = {}
       @known_declarations = {}
+      @known_macros = {}
       @output = []
     end
 
@@ -244,6 +245,14 @@ class Generator
 
     def declare_forward(name)
       @known_declarations[name.to_s] = true
+    end
+
+    def macro_defined?(name)
+      @known_macros.key?(name)
+    end
+
+    def define_macro(name)
+      @known_macros[name.to_s] = true
     end
 
     def emit(ruby)
@@ -274,12 +283,17 @@ class Generator
   class MacroNode < Node
     def initialize(ctx, name, definition)
       @ctx = ctx
-      @name = name
+      @name = name.upcase
       @definition = definition
     end
 
     def to_ffi
-      "#{@name.upcase} = 1 # placeholder"
+      if @ctx.macro_defined?(@name)
+        ''
+      else
+        @ctx.define_macro(@name)
+        "#{@name} = 1 # placeholder"
+      end
     end
   end
 
@@ -479,7 +493,7 @@ class Generator
     end
 
     def to_param
-      return @qual_name if @ctx.known_type?(@qual_name)
+      return "#{@qual_name}.by_value" if @ctx.known_type?(@qual_name)
       return ":#{@qual_name}" if @ctx.known_symbol?(@qual_name)
 
       @name = @ctx.generate_name("UnnamedStruct") if @name.blank?
@@ -517,7 +531,7 @@ class Generator
     end
 
     def to_param
-      return @qual_name if @ctx.known_type?(@qual_name)
+      return "#{@qual_name}.by_value" if @ctx.known_type?(@qual_name)
       return ":#{@qual_name}" if @ctx.known_symbol?(@qual_name)
 
       @name = @ctx.generate_name("UnnamedUnion") if @name.blank?
