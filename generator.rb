@@ -2,6 +2,7 @@
 
 require 'active_support'
 require 'active_support/core_ext/object/blank'
+require 'active_support/core_ext/string/filters'
 require 'active_support/inflector'
 require 'ffi_gen'
 
@@ -292,7 +293,7 @@ class Generator
         ''
       else
         @ctx.define_macro(@name)
-        "#{@name} = 1 # placeholder"
+        "#{@name} = #{@definition.squish.inspect}"
       end
     end
   end
@@ -418,7 +419,7 @@ class Generator
       return_type = @type.return_type.to_param
       param_types = @type.param_types.map(&:to_param).join(", ")
 
-      <<-RUBY
+      <<~RUBY
         callback :#{@name}, [#{param_types}], #{return_type}
       RUBY
     end
