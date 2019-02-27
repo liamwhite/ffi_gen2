@@ -239,7 +239,7 @@ public:
     {
         // Don't visit forward declarations
         if (!rd->isThisDeclarationADefinition())
-            return true;
+            return tag_forward_decl(rd);
 
         rd = rd->getDefinition();
 
@@ -280,6 +280,28 @@ public:
     }
 
 private:
+    bool tag_forward_decl(TagDecl *td)
+    {
+        // Don't try to do binding for non-exported names
+        if (!td->hasNameForLinkage())
+            return true;
+
+        std::string name = td->getNameAsString();
+        if (name.size() == 0)
+            name = td->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
+
+        FFIForwardType t;
+
+        if (td->isUnion())
+            t = FFIForwardType::UNION;
+        else
+            t = FFIForwardType::STRUCT;
+
+        cb.fdc(name.c_str(), t, cb.user_data);
+
+        return true;
+    }
+
     ASTContext *Context;
     callbacks &cb;
 };

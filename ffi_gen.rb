@@ -37,10 +37,12 @@ module FFIGen
     :void_ref
   ]
 
+  enum :FFIForwardType, [
+    :STRUCT,
+    :UNION
+  ]
+
   class FFITypeRef < FFI::Struct
-    #layout :type, :FFIRefType,
-    #       :qual_name, :string,
-    #       :kind, :pointer
   end
 
   class FFIVoidRef < FFI::Struct
@@ -137,6 +139,9 @@ module FFIGen
   # typedef void (*variable_callback)(const char *name, struct FFITypeRef *type, void *data);
   callback :variable_callback, [:string, FFITypeRef.by_ref, :pointer], :void
 
+  # typedef void (*forward_callback)(const char *name, enum FFIForwardType type, void *data);
+  callback :forward_callback, [:string, :FFIForwardType, :pointer], :void
+
   class Callbacks < FFI::Struct
     layout :mc, :macro_callback,
            :tc, :typedef_callback,
@@ -145,6 +150,7 @@ module FFIGen
            :sc, :struct_callback,
            :uc, :union_callback,
            :vc, :variable_callback,
+           :fdc, :forward_callback,
            :data, :pointer
   end
 
@@ -163,6 +169,7 @@ module FFIGen
     cb[:ec] = callback.method(:define_enum)
     cb[:sc] = callback.method(:define_struct)
     cb[:uc] = callback.method(:define_union)
+    cb[:fdc] = callback.method(:declare_forward)
 
     walk_file(filename, argv, args.size, cb)
   end

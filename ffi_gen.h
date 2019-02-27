@@ -43,6 +43,11 @@ enum FFIRefType {
     VOID_REF
 };
 
+enum FFIForwardType {
+    STRUCT,
+    UNION
+};
+
 struct FFIIntegerRef {
     enum FFIIntegerType type;
 };
@@ -123,6 +128,7 @@ typedef void (*enum_callback)(const char *name, const char **member_names, int64
 typedef void (*struct_callback)(const char *name, struct FFITypeRef *member_types, const char **member_names, size_t num_members, void *data);
 typedef void (*union_callback)(const char *name, struct FFITypeRef *member_types, const char **member_names, size_t num_members, void *data);
 typedef void (*variable_callback)(const char *name, struct FFITypeRef *type, void *data);
+typedef void (*forward_callback)(const char *name, enum FFIForwardType type, void *data);
 
 typedef struct {
     macro_callback mc;
@@ -132,11 +138,11 @@ typedef struct {
     struct_callback sc;
     union_callback uc;
     variable_callback vc;
-
+    forward_callback fdc;
     void *user_data;
 } callbacks;
 
-void walk_file(const char *filename, const char **clangArgs, int argc, callbacks *c);
+void walk_file(const char *filename, const char **clang_args, int argc, callbacks *c);
 
 #ifdef __cplusplus
 } // extern "C"

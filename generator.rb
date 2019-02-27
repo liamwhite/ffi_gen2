@@ -89,6 +89,14 @@ class Generator
     )
   end
 
+  def declare_forward(name, type, _data)
+    if type == :UNION
+      @nodes << UnionForwardDeclNode.new(@ctx, untypedef_name(name))
+    else
+      @nodes << StructForwardDeclNode.new(@ctx, untypedef_name(name))
+    end
+  end
+
   def parsed
     @parsed ||= begin
       @nodes.each do |node|
@@ -186,7 +194,14 @@ class Generator
         node.qual_name = type[:qual_name]
         node
       else
-        BuiltinTypeNode.new(@ctx, untypedef_name(type[:qual_name]), :pointer)
+        pointed_type = type[:kind][:point_type][:pointed_type]
+
+        PointerTypeNode.new(
+          @ctx,
+          type[:qual_name],
+          untypedef_name(pointed_type[:qual_name]),
+          resolve_type_ref(pointed_type)
+        )
       end
     else
       UnknownTypePoisonNode.new(@ctx, type[:qual_name])
@@ -198,6 +213,7 @@ class Generator
 
     def initialize
       @known_types = {}
+      @known_declarations = {}
       @output = []
     end
 
@@ -207,6 +223,14 @@ class Generator
 
     def declare_type(name)
       @known_types[name.to_s] = true
+    end
+
+    def known_declaration?(name)
+      @known_declarations.key?(name.to_s)
+    end
+
+    def declare_forward(name)
+      @known_declarations[name.to_s] = true
     end
 
     def emit(ruby)
@@ -384,6 +408,38 @@ class Generator
     end
   end
 
+  class UnionForwardDeclNode < Node
+    def initialize(ctx, name)
+      @ctx = ctx
+      @name = name
+    end
+
+    def to_ffi
+      @ctx.declare_forward(@name)
+
+      <<-RUBY
+        class #{@name} < FFI::Union
+        end
+      RUBY
+    end
+  end
+
+  class StructForwardDeclNode < Node
+    def initialize(ctx, name)
+      @ctx = ctx
+      @name = name
+    end
+
+    def to_ffi
+      @ctx.declare_forward(@name)
+
+      <<-RUBY
+        class #{@name} < FFI::Struct
+        end
+      RUBY
+    end
+  end
+
   class EnumTypeNode < Node
     def initialize(ctx, qual_name, name)
       @ctx = ctx
@@ -515,6 +571,22 @@ class Generator
       return ":#{@qual_name}" if @ctx.known?(@qual_name)
 
       ":#{@type}"
+    end
+  end
+
+  class PointerTypeNode < Node
+    def initialize(ctx, qual_name, qual_name_underlying, underlying_type)
+      @ctx = ctx
+      @qual_name = qual_name
+      @qual_name_u = qual_name_underlying
+      @underlying = underlying_type
+    end
+
+    def to_param
+      return ":#{@qual_name}" if @ctx.known?(@qual_name)
+      return ':string' if @qual_name_u == 'char'
+      return "#{@qual_name_u}.by_ref" if @ctx.known_declaration?(@qual_name_u)
+      ":pointer"
     end
   end
 
