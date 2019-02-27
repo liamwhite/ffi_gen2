@@ -3,7 +3,6 @@
 require 'active_support'
 require 'active_support/core_ext/object/blank'
 require 'active_support/inflector'
-require 'byebug'
 require 'ffi_gen'
 
 class Generator
@@ -42,7 +41,7 @@ class Generator
 
   def define_enum(name, member_names, member_values, num_members, _data)
     member_names = to_array_of_string(member_names, num_members)
-    member_values = member_values.to_array_of_long(num_members)
+    member_values = member_values.read_array_of_long(num_members)
 
     @nodes << EnumDeclNode.new(
       @ctx,
@@ -348,9 +347,17 @@ class Generator
 
       return callback_to_ffi if @type.is_a?(FunctionTypeNode)
 
-      <<-RUBY
-        typedef #{@type.to_param}, :#{@name}
-      RUBY
+      old_name = @type.to_param
+      new_name = ":#{@name}"
+
+      # Don't emit anything if the names are identical
+      if old_name == new_name
+        ''
+      else
+        <<-RUBY
+          typedef #{old_name}, #{new_name}
+        RUBY
+      end
     end
 
     def callback_to_ffi
