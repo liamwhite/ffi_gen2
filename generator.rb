@@ -309,7 +309,7 @@ class Generator
 
       members = @members.map { |n,v| ":#{n}, #{v}" }.join(", ")
 
-      <<-RUBY
+      <<~RUBY
         enum :#{@name}, [#{members}]
       RUBY
     end
@@ -330,7 +330,7 @@ class Generator
 
       member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(", ")
 
-      <<-RUBY
+      <<~RUBY
         class #{@name} < FFI::Struct
           #{"layout #{member_string}" if member_string.present?}
         end
@@ -358,7 +358,7 @@ class Generator
 
       member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(", ")
 
-      <<-RUBY
+      <<~RUBY
         class #{@name} < FFI::Union
           #{"layout #{member_string}" if member_string.present?}
         end
@@ -383,7 +383,7 @@ class Generator
       return_type = @return_type.to_param
       param_types = @parameters.map(&:to_param).join(", ")
 
-      <<-RUBY
+      <<~RUBY
         attach_function :#{@name}, [#{param_types}], #{return_type}
       RUBY
     end
@@ -408,7 +408,7 @@ class Generator
       if old_name == new_name || old_name == ":#{class_name(@name)}"
         ''
       else
-        <<-RUBY
+        <<~RUBY
           typedef #{old_name}, #{new_name}
         RUBY
       end
@@ -432,7 +432,7 @@ class Generator
     end
 
     def to_ffi
-      <<-RUBY
+      <<~RUBY
         attach_variable :#{@name}, #{@type.to_param}
       RUBY
     end
@@ -463,7 +463,7 @@ class Generator
     def to_ffi
       @ctx.declare_forward(@name)
 
-      <<-RUBY
+      <<~RUBY
         class #{@name} < FFI::Struct
         end
       RUBY
@@ -509,7 +509,7 @@ class Generator
 
       member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(", ")
 
-      @ctx.emit <<-RUBY
+      @ctx.emit <<~RUBY
         class #{@name} < FFI::Struct
           #{"layout #{member_string}" if member_string.present?}
         end
@@ -547,7 +547,7 @@ class Generator
 
       member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(", ")
 
-      @ctx.emit <<-RUBY
+      @ctx.emit <<~RUBY
         class #{@name} < FFI::Union
           #{"layout #{member_string}" if member_string.present?}
         end
