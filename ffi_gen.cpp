@@ -397,7 +397,7 @@ static FFITypeRef type_for_qual(QualType qt, ASTContext *ctx)
 
                 members->push_back(m);
             }
-        } else {
+        } else if (rd->hasNameForLinkage()) {
             name = rd->getNameAsString();
             if (name.size() == 0)
                 name = rd->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();

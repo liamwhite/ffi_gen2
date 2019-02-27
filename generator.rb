@@ -232,11 +232,11 @@ class Generator
     end
 
     def known_symbol?(name)
-      @known_types.key?(name.to_s)
+      @known_symbols.key?(name.to_s)
     end
 
     def declare_symbol(name)
-      @known_types[name.to_s] = true
+      @known_symbols[name.to_s] = true
     end
 
     def known_declaration?(name)
