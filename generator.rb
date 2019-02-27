@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+require 'active_support'
+require 'active_support/core_ext/object/blank'
+require 'active_support/inflector'
+require 'byebug'
 require 'ffi_gen'
 
 class Generator
@@ -54,7 +58,7 @@ class Generator
     @nodes << StructDeclNode.new(
       @ctx,
       untypedef_name(name),
-      member_names.zip(member_types)
+      member_names.zip(member_types).map { |n,t| RecordMember.new(n, t) }
     )
   end
 
@@ -65,7 +69,7 @@ class Generator
     @nodes << UnionDeclNode.new(
       @ctx,
       untypedef_name(name),
-      member_names.zip(member_types)
+      member_names.zip(member_types).map { |n,t| RecordMember.new(n, t) }
     )
   end
 
@@ -86,16 +90,26 @@ class Generator
     )
   end
 
+  def parsed
+    @parsed ||= begin
+      @nodes.each do |node|
+        @ctx.emit node.to_ffi
+      end
+
+      @ctx.output
+    end
+  end
+
   private
 
   def resolve_type_array(types, num_types)
-    types = to_array_of(FFIGen::FFITypeRef, num_types)
+    types = to_array_of(FFIGen::FFITypeRef, types, num_types)
     types.map(&method(:resolve_type_ref))
   end
 
   def resolve_record_members(members, num_members)
-    members = to_array_of(FFIGen::FFIRecordMember, num_members)
-    members.map { |m| RecordMember.new(m[:name], resolve_type_ref(m[:type]) }
+    members = to_array_of(FFIGen::FFIRecordMember, members, num_members)
+    members.map { |m| RecordMember.new(m[:name], resolve_type_ref(m[:type])) }
   end
 
   # To make FFI arrays easier to work with
@@ -133,7 +147,7 @@ class Generator
         @ctx,
         untypedef_name(type[:qual_name]),
         struct_type[:name],
-        resolve_record_members(struct_type[:members], struct_type[:num_members)
+        resolve_record_members(struct_type[:members], struct_type[:num_members])
       )
     when :union_ref
       union_type = type[:kind][:union_type]
@@ -142,7 +156,7 @@ class Generator
         @ctx,
         untypedef_name(type[:qual_name]),
         union_type[:name],
-        resolve_record_members(union_type[:members], union_type[:num_members)
+        resolve_record_members(union_type[:members], union_type[:num_members])
       )
     when :function_ref
       func_type = type[:kind][:func_type]
@@ -171,25 +185,34 @@ class Generator
       else
         BuiltinTypeNode.new(@ctx, untypedef_name(type[:qual_name]), :pointer)
       end
+    else
+      UnknownTypePoisonNode.new(@ctx, type[:qual_name])
     end
   end
 
   class OutputContext
+    attr_reader :output
+
     def initialize
       @known_types = {}
       @output = []
     end
 
     def known?(name)
-      @known_types.key?(name)
+      @known_types.key?(name.to_s)
     end
 
     def declare_type(name)
-      @known_types[name] = true
+      @known_types[name.to_s] = true
     end
 
     def emit(ruby)
       @output << ruby
+    end
+
+    def generate_name(name)
+      @count ||= 0
+      "#{name}#{@count += 1}"
     end
   end
 
@@ -203,6 +226,12 @@ class Generator
   end
 
   class Node
+    def inspect
+      variables = instance_variables - [:@ctx]
+      variables = variables.map { |x| "#{x}=#{instance_variable_get(x).inspect}" }.join(", ")
+
+      "<##{self.class.to_s} #{variables}>"
+    end
   end
 
   class MacroNode < Node
@@ -225,9 +254,9 @@ class Generator
     end
 
     def to_ffi
-      @ctx.declare_type(name)
+      @ctx.declare_type(@name)
 
-      members = @members.map { |n,v| ":#{n}, #{v}" }.join(",")
+      members = @members.map { |n,v| ":#{n}, #{v}" }.join(", ")
 
       <<-RUBY
         enum :#{@name}, [#{members}]
@@ -243,12 +272,12 @@ class Generator
     end
 
     def to_ffi
-      @ctx.declare_type(name)
+      @ctx.declare_type(@name)
 
-      member_names = @members.map { |m| m.name || anonymous_name }
+      member_names = @members.map { |m| m.name.presence || anonymous_name }
       member_types = @members.map { |m| m.child.to_param }
 
-      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(",")
+      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(", ")
 
       <<-RUBY
         class #{@name} < FFI::Struct
@@ -271,12 +300,12 @@ class Generator
     end
 
     def to_ffi
-      @ctx.declare_type(name)
+      @ctx.declare_type(@name)
 
-      member_names = @members.map { |m| m.name || anonymous_name }
+      member_names = @members.map { |m| m.name.presence || anonymous_name }
       member_types = @members.map { |m| m.child.to_param }
 
-      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(",")
+      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(", ")
 
       <<-RUBY
         class #{@name} < FFI::Union
@@ -300,8 +329,11 @@ class Generator
     end
 
     def to_ffi
+      return_type = @return_type.to_param
+      param_types = @parameters.map(&:to_param).join(", ")
+
       <<-RUBY
-        attach_function :#{@name}, [#{@parameters.map(&:to_param)}], #{@return_type.to_param}
+        attach_function :#{@name}, [#{param_types}], #{return_type}
       RUBY
     end
   end
@@ -314,7 +346,7 @@ class Generator
     end
 
     def to_ffi
-      @ctx.declare_type(name)
+      @ctx.declare_type(@name)
 
       <<-RUBY
         typedef #{@type.to_param}, :#{@name}
@@ -344,11 +376,9 @@ class Generator
     end
 
     def to_param
-      if @ctx.known?(@qual_name)
-        ":#{@qual_name}"
-      else
-        ":int64"
-      end
+      return ":#{@qual_name}" if @ctx.known?(@qual_name)
+
+      ':int64'
     end
   end
 
@@ -361,9 +391,9 @@ class Generator
     end
 
     def to_param
-      if @name.nil?
-        @name = @ctx.generate_anonymous_name("UnnamedStruct")
-      end
+      return ":#{@qual_name}" if @ctx.known?(@qual_name)
+
+      @name = @ctx.generate_name("UnnamedStruct") if @name.blank?
 
       emit_definition
 
@@ -371,10 +401,10 @@ class Generator
     end
 
     def emit_definition
-      member_names = members.map { |m| m.name || anonymous_name }
-      member_types = members.map { |m| m.child.to_param }
+      member_names = @members.map { |m| m.name.presence || anonymous_name }
+      member_types = @members.map { |m| m.child.to_param }
 
-      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(",")
+      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(", ")
 
       @ctx.emit <<-RUBY
         class #{@name} < FFI::Struct
@@ -398,9 +428,9 @@ class Generator
     end
 
     def to_param
-      if @name.nil?
-        @name = @ctx.generate_anonymous_name("UnnamedUnion")
-      end
+      return ":#{@qual_name}" if @ctx.known?(@qual_name)
+
+      @name = @ctx.generate_name("UnnamedUnion") if @name.blank?
 
       emit_definition
 
@@ -408,10 +438,10 @@ class Generator
     end
 
     def emit_definition
-      member_names = @members.map { |m| m.name || anonymous_name }
+      member_names = @members.map { |m| m.name.presence || anonymous_name }
       member_types = @members.map { |m| m.child.to_param }
 
-      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(",")
+      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(", ")
 
       @ctx.emit <<-RUBY
         class #{@name} < FFI::Union
@@ -435,10 +465,12 @@ class Generator
     end
 
     def to_param
-      return_type = @return_type.to_param
-      param_types = @param_types.map { |t| t.to_param }
+      return ":#{@qual_name}" if @ctx.known?(@qual_name)
 
-      "callback([#{param_types.map(&:to_param).join(",")}], #{return_type})"
+      return_type = @return_type.to_param
+      param_types = @param_types.map { |t| t.to_param }.join(",")
+
+      "callback([#{param_types}], #{return_type})"
     end
   end
 
@@ -455,13 +487,15 @@ class Generator
   end
 
   class BuiltinTypeNode < Node
-    def initialize(ctx, qual_type, type)
+    def initialize(ctx, qual_name, type)
       @ctx = ctx
-      @qual_type = qual_type
+      @qual_name = qual_name
       @type = type
     end
 
     def to_param
+      return ":#{@qual_name}" if @ctx.known?(@qual_name)
+
       ":#{@type}"
     end
   end
@@ -473,7 +507,7 @@ class Generator
     end
 
     def to_param
-      fail ArgumentError, "Tried to use type #{@qual_name} by value, but missing the definition for that type!"
+      fail ArgumentError, "Tried to use type `#{@qual_name}' by value, but missing the definition for that type!"
     end
   end
 end

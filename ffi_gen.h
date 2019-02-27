@@ -132,6 +132,7 @@ typedef struct {
     struct_callback sc;
     union_callback uc;
     variable_callback vc;
+
     void *user_data;
 } callbacks;
 

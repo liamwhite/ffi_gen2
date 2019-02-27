@@ -181,6 +181,10 @@ public:
 
     virtual bool VisitEnumDecl(EnumDecl *ed)
     {
+        // Don't visit forward declarations
+        if (!ed->isThisDeclarationADefinition())
+            return true;
+
         ed = ed->getCanonicalDecl();
 
         // Don't grab enums that aren't in the main file
@@ -233,9 +237,13 @@ public:
 
     virtual bool VisitRecordDecl(RecordDecl *rd)
     {
+        // Don't visit forward declarations
+        if (!rd->isThisDeclarationADefinition())
+            return true;
+
         rd = rd->getDefinition();
 
-        // Don't grab structs that aren't defined or not in the main file
+        // Don't grab struct definitions that aren't in the main file
         clang::SourceManager &sm { Context->getSourceManager() };
         if (!rd || !sm.isInMainFile(sm.getExpansionLoc(rd->getLocStart())))
             return true;
