@@ -124,7 +124,7 @@ class Generator
   end
 
   def untypedef_name(name)
-    name.sub(/\A(enum|struct|union) /, '').to_sym
+    name.sub(/\A(enum|struct|union) /, '')
   end
 
   def pointer_to_function?(type)
@@ -180,8 +180,12 @@ class Generator
     when :void_ref
       BuiltinTypeNode.new(@ctx, 'void', :void)
     when :pointer_ref
+      # Some annoying indirection (there is no "function type", it is always
+      # a pointer in FFI context
       if pointer_to_function?(type)
-        resolve_type_ref(type[:kind][:point_type][:pointed_type])
+        node = resolve_type_ref(type[:kind][:point_type][:pointed_type])
+        node.qual_name = type[:qual_name]
+        node
       else
         BuiltinTypeNode.new(@ctx, untypedef_name(type[:qual_name]), :pointer)
       end
@@ -226,12 +230,6 @@ class Generator
   end
 
   class Node
-    def inspect
-      variables = instance_variables - [:@ctx]
-      variables = variables.map { |x| "#{x}=#{instance_variable_get(x).inspect}" }.join(", ")
-
-      "<##{self.class.to_s} #{variables}>"
-    end
   end
 
   class MacroNode < Node
@@ -348,8 +346,19 @@ class Generator
     def to_ffi
       @ctx.declare_type(@name)
 
+      return callback_to_ffi if @type.is_a?(FunctionTypeNode)
+
       <<-RUBY
         typedef #{@type.to_param}, :#{@name}
+      RUBY
+    end
+
+    def callback_to_ffi
+      return_type = @type.return_type.to_param
+      param_types = @type.param_types.map(&:to_param).join(", ")
+
+      <<-RUBY
+        callback :#{@name}, [#{param_types}], #{return_type}
       RUBY
     end
   end
@@ -457,6 +466,8 @@ class Generator
   end
 
   class FunctionTypeNode < Node
+    attr_accessor :qual_name, :return_type, :param_types
+
     def initialize(ctx, qual_name, return_type, param_types)
       @ctx = ctx
       @qual_name = qual_name
@@ -468,7 +479,7 @@ class Generator
       return ":#{@qual_name}" if @ctx.known?(@qual_name)
 
       return_type = @return_type.to_param
-      param_types = @param_types.map { |t| t.to_param }.join(",")
+      param_types = @param_types.map(&:to_param).join(", ")
 
       "callback([#{param_types}], #{return_type})"
     end
