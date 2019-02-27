@@ -22,82 +22,92 @@ class Generator
   ].freeze
 
   def initialize
-    @known_types = BUILTIN_TYPES.dup.map{|x| [x, :builtin] }.to_h
-    @variables = {}
-    @output = []
+    @ctx = OutputContext.new
+    @nodes = []
   end
 
   def define_macro(name, definition, _data)
-    @output << [:macro, name.to_sym, try_evaluate(definition)]
+    @nodes << MacroNode.new(@ctx, name, definition)
   end
 
   def define_typedef(name, type, _data)
-    @known_types[name.to_sym] ||= begin
-      @output << [:typedef, name.to_sym, resolve_type_ref(type)]
-     :typedef
-    end
+    @nodes << TypedefDeclNode.new(@ctx, name, resolve_type_ref(type))
   end
 
   def define_enum(name, member_names, member_values, num_members, _data)
-    @known_types[name.to_sym] ||= begin
-      @output << [:enum, untypedef_name(name), enum_members(member_names, member_values, num_members)]
-     :enum
-    end
+    @nodes << EnumDeclNode.new(
+      @ctx,
+      untypedef_name(name),
+      enum_members(member_names, member_values, num_members)
+    )
   end
 
   def define_struct(name, member_types, member_names, num_members, _data)
-    @known_types[name.to_sym] ||= begin
-      @output << [:struct, untypedef_name(name), resolve_record_types(member_types, member_names, num_members)]
-      :struct
-    end
+    @nodes << StructDeclNode.new(
+      @ctx,
+      untypedef_name(name),
+      resolve_record_types(member_types, member_names, num_members)
+    )
   end
 
   def define_union(name, member_types, member_names, num_members, _data)
-    @known_types[name.to_sym] ||= begin
-      @output << [:union, untypedef_name(name), resolve_record_types(member_types, member_names, num_members)]
-      :union
-    end
+    @nodes << UnionDeclNode.new(
+      @ctx,
+      untypedef_name(name),
+      resolve_record_types(member_types, member_names, num_members)
+    )
   end
 
   def define_function(name, return_type, parameters, num_params, _data)
-    @known_types[name.to_sym] ||= begin
-      @output << [:function, name.to_sym, resolve_function_params(parameters, num_params), resolve_type_ref(return_type)]
-      :function
-    end
+    @nodes << FunctionDeclNode.new(
+      @ctx,
+      name,
+      resolve_type_ref(return_type),
+      resolve_function_params(parameters, num_params)
+    )
   end
 
   def define_variable(name, type, _data)
-    @variables[name.to_sym] ||= begin
-      type = resolve_type(type)
-      @output << [:variable, name.to_sym, type]
-      type
-    end
+    @nodes << VariableDeclNode.new(
+      @ctx,
+      name,
+      resolve_type_ref(type)
+    )
   end
 
   private
 
-  # don't even bother for now
+  # To make FFI arrays easier to work with
+  def to_array_of(type, base_ptr, num)
+    base_ptr = base_ptr.to_ptr
+
+    (0...num).map { |i| type.new(base_ptr + i*type.size) }
+  end
+  
+  def to_array_of_string(base_ptr, num)
+    base_ptr.read_array_of_pointer(num).map(&:read_string)
+  end
+
+  # Don't even bother for now
   def try_evaluate(definition)
     definition
   end
 
   def enum_members(member_names, member_values, num_members)
-    member_names = member_names.read_array_of_pointer(num_members).map { |x| x.read_string.to_sym }
+    member_names = to_array_of_string(member_names, num_members)
     member_values = member_values.read_array_of_long(num_members)
 
     member_names.zip(member_values)
   end
 
   def resolve_function_params(parameters, num_params)
-    read_array_of_typeref(parameters, num_params).map { |t| resolve_type_ref(t) }
+    read_array_of_type(FFIGen::FFITypeRef, parameters, num_params).map do |t|
+      resolve_type_ref(t)
+    end
   end
 
   def untypedef_name(name)
     name.sub(/\A(enum|struct|union) /, '').to_sym
-  end
-
-  def known_type?(name)
-    @known_types.key?(name.to_sym)
   end
 
   def callback_definition?(type)
@@ -108,8 +118,10 @@ class Generator
   end
 
   def resolve_record_types(member_types, member_names, num_members)
-    member_names = member_names.read_array_of_pointer(num_members).map { |x| x.read_string.to_sym }
-    member_types = read_array_of_typeref(member_types, num_members).map { |t| resolve_type_ref(t) }
+    member_names = to_array_of_string(member_names, num_members)
+    member_types = read_array_of_type(FFIGen::FFITypeRef, member_types, num_members).map do |t|
+      resolve_type_ref(t)
+    end
 
     member_names.zip(member_types)
   end
@@ -172,22 +184,6 @@ class Generator
     [:callback, param_tys, return_ty]
   end
 
-  def read_array_of_typeref(base_ptr, num)
-    base_ptr = base_ptr.to_ptr
-
-    (0...num).map do |i|
-      FFIGen::FFITypeRef.new(base_ptr + i*FFIGen::FFITypeRef.size)
-    end
-  end
-
-  def read_array_of_recordmember(base_ptr, num)
-    base_ptr = base_ptr.to_ptr
-
-    (0...num).map do |i|
-      FFIGen::FFIRecordMember.new(base_ptr + i*FFIGen::FFIRecordMember.size)
-    end
-  end
-
   class OutputContext
     def initialize
       @known_types = {}
@@ -231,6 +227,24 @@ class Generator
     end
   end
 
+  class EnumDeclNode < Node
+    def initialize(ctx, name, members)
+      @ctx = ctx
+      @name = name
+      @members = members
+    end
+
+    def to_ffi
+      @ctx.declare_type(name)
+
+      members = @members.map { |n,v| ":#{n}, #{v}" }.join(",")
+
+      <<-RUBY
+        enum :#{@name}, [#{members}]
+      RUBY
+    end
+  end
+
   class StructDeclNode < Node
     def initialize(ctx, name, members)
       @ctx = ctx
@@ -244,7 +258,7 @@ class Generator
       member_names = @members.map { |m| m.name || anonymous_name }
       member_types = @members.map { |m| m.child.to_param }
 
-      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, t" }.join(",")
+      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(",")
 
       <<-RUBY
         class #{@name} < FFI::Struct
@@ -272,7 +286,7 @@ class Generator
       member_names = @members.map { |m| m.name || anonymous_name }
       member_types = @members.map { |m| m.child.to_param }
 
-      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, t" }.join(",")
+      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(",")
 
       <<-RUBY
         class #{@name} < FFI::Union
@@ -353,7 +367,7 @@ class Generator
       member_names = members.map { |m| m.name || anonymous_name }
       member_types = members.map { |m| m.child.to_param }
 
-      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, t" }.join(",")
+      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(",")
 
       @ctx.emit <<-RUBY
         class #{@name} < FFI::Struct
@@ -389,7 +403,7 @@ class Generator
       member_names = @members.map { |m| m.name || anonymous_name }
       member_types = @members.map { |m| m.child.to_param }
 
-      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, t" }.join(",")
+      member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(",")
 
       @ctx.emit <<-RUBY
         class #{@name} < FFI::Union
@@ -448,7 +462,7 @@ class Generator
     end
 
     def to_param
-      fail ArgumentError, "Tried to use type #{@name} by value, but missing definition for that type"
+      fail ArgumentError, "Tried to use type #{@name} by value, but missing the definition for that type!"
     end
   end
 end
