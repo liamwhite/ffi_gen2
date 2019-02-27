@@ -26,7 +26,8 @@ class Generator
     :void
   ].freeze
 
-  def initialize
+  def initialize(module_name)
+    @module_name = module_name
     @ctx = OutputContext.new
     @nodes = []
   end
@@ -99,9 +100,12 @@ class Generator
 
   def parsed
     @parsed ||= begin
+      @ctx.emit "module #{@module_name}"
+      @ctx.emit "  extend FFI::Library"
       @nodes.each do |node|
         @ctx.emit node.to_ffi
       end
+      @ctx.emit "end"
 
       @ctx.output
     end
@@ -153,7 +157,7 @@ class Generator
       StructTypeNode.new(
         @ctx,
         untypedef_name(type[:qual_name]),
-        struct_type[:name],
+        untypedef_name(struct_type[:name]),
         resolve_record_members(struct_type[:members], struct_type[:num_members])
       )
     when :union_ref
@@ -162,7 +166,7 @@ class Generator
       UnionTypeNode.new(
         @ctx,
         untypedef_name(type[:qual_name]),
-        union_type[:name],
+        untypedef_name(union_type[:name]),
         resolve_record_members(union_type[:members], union_type[:num_members])
       )
     when :function_ref
@@ -213,15 +217,24 @@ class Generator
 
     def initialize
       @known_types = {}
+      @known_symbols = {}
       @known_declarations = {}
       @output = []
     end
 
-    def known?(name)
+    def known_type?(name)
       @known_types.key?(name.to_s)
     end
 
     def declare_type(name)
+      @known_types[name.to_s] = true
+    end
+
+    def known_symbol?(name)
+      @known_types.key?(name.to_s)
+    end
+
+    def declare_symbol(name)
       @known_types[name.to_s] = true
     end
 
@@ -253,6 +266,9 @@ class Generator
   end
 
   class Node
+    def class_name(name)
+      ActiveSupport::Inflector.classify(name)
+    end
   end
 
   class MacroNode < Node
@@ -288,7 +304,7 @@ class Generator
   class StructDeclNode < Node
     def initialize(ctx, name, members)
       @ctx = ctx
-      @name = name
+      @name = class_name(name)
       @members = members
     end
 
@@ -302,7 +318,7 @@ class Generator
 
       <<-RUBY
         class #{@name} < FFI::Struct
-          layout #{member_string}
+          #{"layout #{member_string}" if member_string.present?}
         end
       RUBY
     end
@@ -316,7 +332,7 @@ class Generator
   class UnionDeclNode < Node
     def initialize(ctx, name, members)
       @ctx = ctx
-      @name = name
+      @name = class_name(name)
       @members = members
     end
 
@@ -330,7 +346,7 @@ class Generator
 
       <<-RUBY
         class #{@name} < FFI::Union
-          layout #{member_string}
+          #{"layout #{member_string}" if member_string.present?}
         end
       RUBY
     end
@@ -367,7 +383,7 @@ class Generator
     end
 
     def to_ffi
-      @ctx.declare_type(@name)
+      @ctx.declare_symbol(@name)
 
       return callback_to_ffi if @type.is_a?(FunctionTypeNode)
 
@@ -375,7 +391,7 @@ class Generator
       new_name = ":#{@name}"
 
       # Don't emit anything if the names are identical
-      if old_name == new_name
+      if old_name == new_name || old_name == ":#{class_name(@name)}"
         ''
       else
         <<-RUBY
@@ -411,7 +427,7 @@ class Generator
   class UnionForwardDeclNode < Node
     def initialize(ctx, name)
       @ctx = ctx
-      @name = name
+      @name = class_name(name)
     end
 
     def to_ffi
@@ -427,7 +443,7 @@ class Generator
   class StructForwardDeclNode < Node
     def initialize(ctx, name)
       @ctx = ctx
-      @name = name
+      @name = class_name(name)
     end
 
     def to_ffi
@@ -448,7 +464,7 @@ class Generator
     end
 
     def to_param
-      return ":#{@qual_name}" if @ctx.known?(@qual_name)
+      return ":#{@qual_name}" if @ctx.known_symbol?(@qual_name)
 
       ':int64'
     end
@@ -457,17 +473,18 @@ class Generator
   class StructTypeNode < Node
     def initialize(ctx, qual_name, name, members)
       @ctx = ctx
-      @qual_name = qual_name
-      @name = name
+      @qual_name = class_name(qual_name)
+      @name = class_name(name)
       @members = members
     end
 
     def to_param
-      return ":#{@qual_name}" if @ctx.known?(@qual_name)
+      return @qual_name if @ctx.known_type?(@qual_name)
+      return ":#{@qual_name}" if @ctx.known_symbol?(@qual_name)
 
       @name = @ctx.generate_name("UnnamedStruct") if @name.blank?
 
-      emit_definition
+      emit_definition unless @ctx.known_type?(@name)
 
       "#{@name}.by_value"
     end
@@ -480,7 +497,7 @@ class Generator
 
       @ctx.emit <<-RUBY
         class #{@name} < FFI::Struct
-          layout #{member_string}
+          #{"layout #{member_string}" if member_string.present?}
         end
       RUBY
     end
@@ -494,17 +511,18 @@ class Generator
   class UnionTypeNode < Node
     def initialize(ctx, qual_name, name, members)
       @ctx = ctx
-      @qual_name = qual_name
-      @name = name
+      @qual_name = class_name(qual_name)
+      @name = class_name(name)
       @members = members
     end
 
     def to_param
-      return ":#{@qual_name}" if @ctx.known?(@qual_name)
+      return @qual_name if @ctx.known_type?(@qual_name)
+      return ":#{@qual_name}" if @ctx.known_symbol?(@qual_name)
 
       @name = @ctx.generate_name("UnnamedUnion") if @name.blank?
 
-      emit_definition
+      emit_definition unless @ctx.known?(@name)
 
       "#{@name}.by_value"
     end
@@ -517,7 +535,7 @@ class Generator
 
       @ctx.emit <<-RUBY
         class #{@name} < FFI::Union
-          layout #{member_string}
+          #{"layout #{member_string}" if member_string.present?}
         end
       RUBY
     end
@@ -539,7 +557,7 @@ class Generator
     end
 
     def to_param
-      return ":#{@qual_name}" if @ctx.known?(@qual_name)
+      return ":#{@qual_name}" if @ctx.known_symbol?(@qual_name)
 
       return_type = @return_type.to_param
       param_types = @param_types.map(&:to_param).join(", ")
@@ -568,7 +586,7 @@ class Generator
     end
 
     def to_param
-      return ":#{@qual_name}" if @ctx.known?(@qual_name)
+      return ":#{@qual_name}" if @ctx.known_symbol?(@qual_name)
 
       ":#{@type}"
     end
@@ -578,14 +596,15 @@ class Generator
     def initialize(ctx, qual_name, qual_name_underlying, underlying_type)
       @ctx = ctx
       @qual_name = qual_name
-      @qual_name_u = qual_name_underlying
+      @qual_name_u = class_name(qual_name_underlying)
       @underlying = underlying_type
     end
 
     def to_param
-      return ":#{@qual_name}" if @ctx.known?(@qual_name)
+      return ":#{@qual_name}" if @ctx.known_symbol?(@qual_name)
       return ':string' if @qual_name_u == 'char'
-      return "#{@qual_name_u}.by_ref" if @ctx.known_declaration?(@qual_name_u)
+      return "#{@qual_name_u}.by_ref" if @ctx.known_type?(@qual_name_u) || @ctx.known_declaration?(@qual_name_u)
+
       ":pointer"
     end
   end

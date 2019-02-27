@@ -286,6 +286,11 @@ private:
         if (!td->hasNameForLinkage())
             return true;
 
+        // Don't grab declarations that aren't in the main file
+        clang::SourceManager &sm { Context->getSourceManager() };
+        if (!sm.isInMainFile(sm.getExpansionLoc(td->getLocStart())))
+            return true;
+
         std::string name = td->getNameAsString();
         if (name.size() == 0)
             name = td->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
