@@ -155,13 +155,17 @@ module FFIGen
            :data, :pointer
   end
 
-  # void walk_file(const char *filename, const char **clangArgs, int argc, callbacks c);
-  attach_function :walk_file, [:string, :pointer, :int, :pointer], :void
+  # void walk_file(const char *filename, const char **clang_args, int argc, const char **source_locations, int nloc, callbacks *c);
+  attach_function :walk_file, [:string, :pointer, :int, :pointer, :int, :pointer], :void
 
-  def self.inspect_file(filename, args, callback)
+  def self.inspect_file(filename, source_filter, args, callback)
     argv = FFI::MemoryPointer.new(:pointer, args.count)
     args.map!{|a| FFI::MemoryPointer.from_string(a) }
     argv.write_array_of_pointer(args)
+
+    sources = FFI::MemoryPointer.new(:pointer, source_filter.count)
+    source_filter.map!{|f| FFI::MemoryPointer.from_string(f) }
+    sources.write_array_of_pointer(source_filter)
 
     cb = Callbacks.new
     cb[:mc] = callback.method(:define_macro)
@@ -172,6 +176,6 @@ module FFIGen
     cb[:uc] = callback.method(:define_union)
     cb[:fdc] = callback.method(:declare_forward)
 
-    walk_file(filename, argv, args.size, cb)
+    walk_file(filename, argv, args.size, sources, source_filter.size, cb)
   end
 end

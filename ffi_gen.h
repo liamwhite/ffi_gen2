@@ -142,7 +142,14 @@ typedef struct {
     void *user_data;
 } callbacks;
 
-void walk_file(const char *filename, const char **clang_args, int argc, callbacks *c);
+void walk_file(
+    const char *filename,
+    const char **clang_args,
+    int argc,
+    const char **source_locations,
+    int nloc,
+    callbacks *c
+);
 
 #ifdef __cplusplus
 } // extern "C"

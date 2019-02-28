@@ -62,7 +62,7 @@ public:
 class MacroParseAction : public clang::PreprocessOnlyAction
 {
 public:
-    MacroParseAction(callbacks &cb) : cb(cb) {}
+    MacroParseAction(callbacks &cb, std::vector<std::string> &sources) : cb(cb), sources(sources) {}
 
     virtual void ExecuteAction()
     {
@@ -135,18 +135,31 @@ private:
     }
 
     callbacks &cb;
+    std::vector<std::string> &sources;
 };
 
 class FFIGenVisitor : public RecursiveASTVisitor<FFIGenVisitor>
 {
 public:
-    explicit FFIGenVisitor(ASTContext *Context, callbacks &cb) : Context(Context), cb(cb) {}
+    explicit FFIGenVisitor(ASTContext *Context, callbacks &cb, std::vector<std::string> &sources)
+        : Context(Context), cb(cb), sources(sources) {}
+
+    bool isInRequestedSourceFiles(SourceLocation l)
+    {
+        clang::SourceManager &sm { Context->getSourceManager() };
+
+        l = sm.getExpansionLoc(l);
+
+        for (auto &f : sources)
+            if (sm.getFilename(l) == f)
+                return true;
+
+        return false;
+    }
 
     virtual bool VisitFunctionDecl(FunctionDecl *func)
     {
-        // Don't grab functions that aren't in the main file
-        clang::SourceManager &sm { Context->getSourceManager() };
-        if (!sm.isInMainFile(sm.getExpansionLoc(func->getLocStart())))
+        if (!isInRequestedSourceFiles(func->getLocStart()))
             return true;
 
         FFITypeRef returnTy;
@@ -162,9 +175,7 @@ public:
 
     virtual bool VisitVarDecl(VarDecl *vd)
     {
-        // Don't grab variables that aren't in the main file
-        clang::SourceManager &sm { Context->getSourceManager() };
-        if (!sm.isInMainFile(sm.getExpansionLoc(vd->getLocStart())))
+        if (!isInRequestedSourceFiles(vd->getLocStart()))
             return true;
 
         // Don't try to do binding for non-exported variables
@@ -187,9 +198,7 @@ public:
 
         ed = ed->getCanonicalDecl();
 
-        // Don't grab enums that aren't in the main file
-        clang::SourceManager &sm { Context->getSourceManager() };
-        if (!sm.isInMainFile(sm.getExpansionLoc(ed->getLocStart())))
+        if (!isInRequestedSourceFiles(ed->getLocStart()))
             return true;
 
         // Don't try to do binding for non-exported enums
@@ -222,9 +231,7 @@ public:
 
     virtual bool VisitTypedefDecl(TypedefDecl *td)
     {
-        // Don't grab typedefs that aren't in the main file
-        clang::SourceManager &sm { Context->getSourceManager() };
-        if (!sm.isInMainFile(sm.getExpansionLoc(td->getLocStart())))
+        if (!isInRequestedSourceFiles(td->getLocStart()))
             return true;
 
         std::string aliasName = td->getNameAsString();
@@ -243,9 +250,7 @@ public:
 
         rd = rd->getDefinition();
 
-        // Don't grab struct definitions that aren't in the main file
-        clang::SourceManager &sm { Context->getSourceManager() };
-        if (!rd || !sm.isInMainFile(sm.getExpansionLoc(rd->getLocStart())))
+        if (!rd || !isInRequestedSourceFiles(rd->getLocStart()))
             return true;
 
         // Don't try to do binding for non-exported structs/unions
@@ -286,9 +291,7 @@ private:
         if (!td->hasNameForLinkage())
             return true;
 
-        // Don't grab declarations that aren't in the main file
-        clang::SourceManager &sm { Context->getSourceManager() };
-        if (!sm.isInMainFile(sm.getExpansionLoc(td->getLocStart())))
+        if (!isInRequestedSourceFiles(td->getLocStart()))
             return true;
 
         std::string name = td->getNameAsString();
@@ -309,13 +312,14 @@ private:
 
     ASTContext *Context;
     callbacks &cb;
+    std::vector<std::string> &sources;
 };
 
 
 class FFIParseConsumer : public clang::ASTConsumer
 {
 public:
-    explicit FFIParseConsumer(ASTContext *Context, callbacks &cb) : Visitor(Context, cb)
+    explicit FFIParseConsumer(ASTContext *Context, callbacks &cb, std::vector<std::string> &sources) : Visitor(Context, cb, sources)
     {}
 
     virtual void HandleTranslationUnit(clang::ASTContext &Context)
@@ -329,15 +333,16 @@ private:
 
 class FFIParseAction : public clang::ASTFrontendAction {
 public:
-    FFIParseAction(callbacks &cb) : cb(cb) {}
+    FFIParseAction(callbacks &cb, std::vector<std::string> &sources) : cb(cb), sources(sources) {}
 
     virtual std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(clang::CompilerInstance &Compiler, llvm::StringRef InFile)
     {
-        return std::unique_ptr<clang::ASTConsumer> { new FFIParseConsumer { &Compiler.getASTContext(), cb } };
+        return std::unique_ptr<clang::ASTConsumer> { new FFIParseConsumer { &Compiler.getASTContext(), cb, sources } };
     }
 
 private:
     callbacks &cb;
+    std::vector<std::string> &sources;
 };
 
 static FFITypeRef type_for_qual(QualType qt, ASTContext *ctx)
@@ -561,15 +566,19 @@ static void get_types_for_func(FunctionDecl *fd, FFITypeRef &returnTy, std::vect
 }
 
 
-void walk_file(const char *filename, const char **clangArgs, int argc, callbacks *c)
+void walk_file(const char *filename, const char **clangArgs, int argc, const char **sourceLocations, int nloc, callbacks *c)
 {
     std::ifstream t { filename };
     std::string inFile { std::istreambuf_iterator<char>(t), std::istreambuf_iterator<char>() };
     std::vector<std::string> args;
+    std::vector<std::string> sources;
 
     for (int i = 0; i < argc; ++i)
         args.push_back(std::string { clangArgs[i] });
 
-    clang::tooling::runToolOnCodeWithArgs(new MacroParseAction { *c }, inFile, args, filename);
-    clang::tooling::runToolOnCodeWithArgs(new FFIParseAction { *c }, inFile, args, filename);
+    for (int i = 0; i < nloc; ++i)
+        sources.push_back(std::string { sourceLocations[i] });
+
+    clang::tooling::runToolOnCodeWithArgs(new MacroParseAction { *c, sources }, inFile, args, filename);
+    clang::tooling::runToolOnCodeWithArgs(new FFIParseAction { *c, sources }, inFile, args, filename);
 }

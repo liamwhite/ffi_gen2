@@ -101,12 +101,9 @@ class Generator
 
   def parsed
     @parsed ||= begin
-      @ctx.emit "module #{@module_name}"
-      @ctx.emit "  extend FFI::Library"
       @nodes.each do |node|
         @ctx.emit node.to_ffi
       end
-      @ctx.emit "end"
 
       @ctx.output
     end
