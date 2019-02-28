@@ -29,8 +29,9 @@ class GetMacros : public PPCallbacks
 public:
     Preprocessor &pp;
     std::map<std::string, std::vector<Token> > macros;
+    std::vector<std::string> &sources;
 
-    GetMacros(Preprocessor &p) : pp(p) {}
+    GetMacros(Preprocessor &p, std::vector<std::string> &sources) : pp(p), sources(sources) {}
 
     virtual void MacroDefined(const Token &MacroNameTok, const MacroDirective *MD)
 	{
@@ -39,7 +40,7 @@ public:
 
         // Ignore function-like macros and macros not in the
         // file we wanted to parse
-	    if (i->isObjectLike() && pp.isInPrimaryFile()) {
+	    if (i->isObjectLike() && isInRequestedSourceFiles(i)) {
 	        std::vector<Token> tokens;
 
 	        for (auto &t : i->tokens())
@@ -57,6 +58,19 @@ public:
     {
         macros.erase(MacroNameTok.getName());
     }
+
+private:
+    bool isInRequestedSourceFiles(const MacroInfo *i)
+    {
+        SourceManager &sm { pp.getSourceManager() };
+        SourceLocation loc = i->getDefinitionLoc();
+
+        for (auto &f : sources)
+            if (sm.getFilename(loc) == f)
+                return true;
+
+        return false;
+    }
 };
 
 class MacroParseAction : public clang::PreprocessOnlyAction
@@ -68,7 +82,7 @@ public:
     {
         Preprocessor &p = getCompilerInstance().getPreprocessor();
 
-        std::unique_ptr<GetMacros> get_macros { new GetMacros { p } };
+        std::unique_ptr<GetMacros> get_macros { new GetMacros { p, sources } };
         p.addPPCallbacks(std::move(get_macros));
 
         clang::PreprocessOnlyAction::ExecuteAction();
