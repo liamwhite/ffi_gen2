@@ -86,14 +86,16 @@ module FFIGen
     layout :name, :string,
            :members, FFIRecordMember.by_ref,
            :num_members, :size_t,
-           :anonymous, :int
+           :anonymous, :int,
+           :defined, :int
   end
 
   class FFIUnionRef < FFI::Struct
     layout :name, :string,
            :members, FFIRecordMember.by_ref,
            :num_members, :size_t,
-           :anonymous, :int
+           :anonymous, :int,
+           :defined, :int
   end
 
   class FFIPointerRef < FFI::Struct
@@ -131,11 +133,11 @@ module FFIGen
   # typedef void (*enum_callback)(const char *name, const char **member_names, int64_t *member_values, size_t num_members, void *data);
   callback :enum_callback, [:string, :pointer, :pointer, :size_t, :pointer], :void
 
-  # typedef void (*struct_callback)(const char *name, FFITypeRef *member_types, const char **member_names, size_t num_members, void *data);
-  callback :struct_callback, [:string, FFITypeRef.by_ref, :pointer, :size_t, :pointer], :void
+  # typedef void (*struct_callback)(const char *name, struct FFITypeRef *member_types, const char **member_names, size_t num_members, int defined, void *data);
+  callback :struct_callback, [:string, FFITypeRef.by_ref, :pointer, :size_t, :int, :pointer], :void
 
-  # typedef void (*union_callback)(const char *name, FFITypeRef *member_types, const char **member_names, size_t num_members, void *data);
-  callback :union_callback, [:string, FFITypeRef.by_ref, :pointer, :size_t, :pointer], :void
+  # typedef void (*union_callback)(const char *name, FFITypeRef *member_types, const char **member_names, size_t num_members, int defined, void *data);
+  callback :union_callback, [:string, FFITypeRef.by_ref, :pointer, :size_t, :int, :pointer], :void
 
   # typedef void (*variable_callback)(const char *name, struct FFITypeRef *type, void *data);
   callback :variable_callback, [:string, FFITypeRef.by_ref, :pointer], :void

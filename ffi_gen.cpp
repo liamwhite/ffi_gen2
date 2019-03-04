@@ -271,6 +271,8 @@ public:
         if (!rd->hasNameForLinkage())
             return true;
 
+        bool defined = rd->getDefinition() != NULL;
+
         std::string name = rd->getNameAsString();
         if (name.size() == 0)
             name = rd->getTypedefNameForAnonDecl()->getUnderlyingType().getAsString();
@@ -290,9 +292,9 @@ public:
             memberNames.push_back(s.c_str());
 
         if (rd->isUnion()) {
-            cb.uc(name.c_str(), &memberTypes[0], &memberNames[0], memberTypes.size(), cb.user_data);
+            cb.uc(name.c_str(), &memberTypes[0], &memberNames[0], memberTypes.size(), defined, cb.user_data);
         } else {
-            cb.sc(name.c_str(), &memberTypes[0], &memberNames[0], memberTypes.size(), cb.user_data);
+            cb.sc(name.c_str(), &memberTypes[0], &memberNames[0], memberTypes.size(), defined, cb.user_data);
         }
 
         return true;
@@ -394,6 +396,9 @@ static FFITypeRef type_for_qual(QualType qt, ASTContext *ctx)
         std::string name;
         std::vector<FFIRecordMember> *members = NULL;
 
+        // see if it's defined
+        bool defined = rd->getDefinition() != NULL;
+
         if (rd->isAnonymousStructOrUnion()) {
             // Only add fields in an anonymous record!
             members = new std::vector<FFIRecordMember>; // LEAK
@@ -428,6 +433,7 @@ static FFITypeRef type_for_qual(QualType qt, ASTContext *ctx)
             returnTy.union_type.members = NULL;
             returnTy.union_type.num_members = 0;
             returnTy.union_type.name = NULL;
+            returnTy.union_type.defined = defined;
             if (members) {
                 returnTy.union_type.members = &((*members)[0]);
                 returnTy.union_type.num_members = members->size();
@@ -440,6 +446,7 @@ static FFITypeRef type_for_qual(QualType qt, ASTContext *ctx)
             returnTy.struct_type.members = NULL;
             returnTy.struct_type.num_members = 0;
             returnTy.struct_type.name = NULL;
+            returnTy.struct_type.defined = defined;
             if (members) {
                 returnTy.struct_type.members = &((*members)[0]);
                 returnTy.struct_type.num_members = members->size();

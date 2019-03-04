@@ -91,6 +91,7 @@ struct FFIStructRef {
     struct FFIRecordMember *members;
     size_t num_members;
     int anonymous;
+    int defined;
 };
 
 struct FFIUnionRef {
@@ -98,6 +99,7 @@ struct FFIUnionRef {
     struct FFIRecordMember *members;
     size_t num_members;
     int anonymous;
+    int defined;
 };
 
 struct FFIPointerRef {
@@ -125,8 +127,8 @@ typedef void (*macro_callback)(const char *name, const char *definition, void *d
 typedef void (*typedef_callback)(const char *name, struct FFITypeRef *to, void *data);
 typedef void (*function_callback)(const char *name, struct FFITypeRef *return_type, struct FFITypeRef *param_types, size_t num_params, void *data);
 typedef void (*enum_callback)(const char *name, const char **member_names, int64_t *member_values, size_t num_members, void *data);
-typedef void (*struct_callback)(const char *name, struct FFITypeRef *member_types, const char **member_names, size_t num_members, void *data);
-typedef void (*union_callback)(const char *name, struct FFITypeRef *member_types, const char **member_names, size_t num_members, void *data);
+typedef void (*struct_callback)(const char *name, struct FFITypeRef *member_types, const char **member_names, size_t num_members, int defined, void *data);
+typedef void (*union_callback)(const char *name, struct FFITypeRef *member_types, const char **member_names, size_t num_members, int defined, void *data);
 typedef void (*variable_callback)(const char *name, struct FFITypeRef *type, void *data);
 typedef void (*forward_callback)(const char *name, enum FFIForwardType type, void *data);
 

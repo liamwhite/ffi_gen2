@@ -52,25 +52,27 @@ class Generator
     )
   end
 
-  def define_struct(name, member_types, member_names, num_members, _data)
+  def define_struct(name, member_types, member_names, num_members, defined, _data)
     member_names = to_array_of_string(member_names, num_members)
     member_types = resolve_type_array(member_types, num_members)
 
     @nodes << StructDeclNode.new(
       @ctx,
       untypedef_name(name),
-      member_names.zip(member_types).map { |n,t| RecordMember.new(n, t) }
+      member_names.zip(member_types).map { |n,t| RecordMember.new(n, t) },
+      defined
     )
   end
 
-  def define_union(name, member_types, member_names, num_members, _data)
+  def define_union(name, member_types, member_names, num_members, defined, _data)
     member_names = to_array_of_string(member_names, num_members)
     member_types = resolve_type_array(member_types, num_members)
 
     @nodes << UnionDeclNode.new(
       @ctx,
       untypedef_name(name),
-      member_names.zip(member_types).map { |n,t| RecordMember.new(n, t) }
+      member_names.zip(member_types).map { |n,t| RecordMember.new(n, t) },
+      defined
     )
   end
 
@@ -156,7 +158,8 @@ class Generator
         @ctx,
         untypedef_name(type[:qual_name]),
         untypedef_name(struct_type[:name]),
-        resolve_record_members(struct_type[:members], struct_type[:num_members])
+        resolve_record_members(struct_type[:members], struct_type[:num_members]),
+        struct_type[:defined]
       )
     when :union_ref
       union_type = type[:kind][:union_type]
@@ -165,7 +168,8 @@ class Generator
         @ctx,
         untypedef_name(type[:qual_name]),
         untypedef_name(union_type[:name]),
-        resolve_record_members(union_type[:members], union_type[:num_members])
+        resolve_record_members(union_type[:members], union_type[:num_members]),
+        union_type[:defined]
       )
     when :function_ref
       func_type = type[:kind][:func_type]
@@ -314,10 +318,11 @@ class Generator
   end
 
   class StructDeclNode < Node
-    def initialize(ctx, name, members)
+    def initialize(ctx, name, members, defined)
       @ctx = ctx
       @name = class_name(name)
       @members = members
+      @defined = defined
     end
 
     def to_ffi
@@ -328,11 +333,19 @@ class Generator
 
       member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(", ")
 
-      <<~RUBY
-        class #{@name} < FFI::Struct
-          #{"layout #{member_string}" if member_string.present?}
-        end
-      RUBY
+      if @defined
+        <<~RUBY
+          class #{@name} < FFI::Struct
+            #{"layout #{member_string}" if member_string.present?}
+          end
+        RUBY
+      else
+        <<~RUBY
+          class #{@name} < FFI::Struct
+            layout :_dummy, :size_t
+          end
+        RUBY
+      end
     end
 
     def anonymous_name
@@ -342,10 +355,11 @@ class Generator
   end
 
   class UnionDeclNode < Node
-    def initialize(ctx, name, members)
+    def initialize(ctx, name, members, defined)
       @ctx = ctx
       @name = class_name(name)
       @members = members
+      @defined = defined
     end
 
     def to_ffi
@@ -356,11 +370,19 @@ class Generator
 
       member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(", ")
 
-      <<~RUBY
-        class #{@name} < FFI::Union
-          #{"layout #{member_string}" if member_string.present?}
-        end
-      RUBY
+      if @defined
+        <<~RUBY
+          class #{@name} < FFI::Union
+            #{"layout #{member_string}" if member_string.present?}
+          end
+        RUBY
+      else
+        <<~RUBY
+          class #{@name} < FFI::Union
+            layout :_dummy, :size_t
+          end
+        RUBY
+      end
     end
 
     def anonymous_name
@@ -395,6 +417,10 @@ class Generator
     end
 
     def to_ffi
+      if @type.is_a?(StructTypeNode) || @type.is_a?(UnionTypeNode) || @type.is_a?(ArrayTypeNode)
+        return '' # don't typedef struct/union names or arrays
+      end
+
       @ctx.declare_symbol(@name)
 
       return callback_to_ffi if @type.is_a?(FunctionTypeNode)
@@ -445,8 +471,9 @@ class Generator
     def to_ffi
       @ctx.declare_forward(@name)
 
-      <<-RUBY
+      <<~RUBY
         class #{@name} < FFI::Union
+          layout :_dummy, :size_t
         end
       RUBY
     end
@@ -463,6 +490,7 @@ class Generator
 
       <<~RUBY
         class #{@name} < FFI::Struct
+          layout :_dummy, :size_t
         end
       RUBY
     end
@@ -483,16 +511,17 @@ class Generator
   end
 
   class StructTypeNode < Node
-    def initialize(ctx, qual_name, name, members)
+    def initialize(ctx, qual_name, name, members, defined)
       @ctx = ctx
       @qual_name = class_name(qual_name)
       @name = class_name(name)
       @members = members
+      @defined = defined
     end
 
     def to_param
       return "#{@qual_name}.by_value" if @ctx.known_type?(@qual_name)
-      return ":#{@qual_name}" if @ctx.known_symbol?(@qual_name)
+      #return ":#{@qual_name}" if @ctx.known_symbol?(@qual_name)
 
       @name = @ctx.generate_name("UnnamedStruct") if @name.blank?
 
@@ -507,11 +536,19 @@ class Generator
 
       member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(", ")
 
-      @ctx.emit <<~RUBY
-        class #{@name} < FFI::Struct
-          #{"layout #{member_string}" if member_string.present?}
-        end
-      RUBY
+      if @defined
+        @ctx.emit <<~RUBY
+          class #{@name} < FFI::Struct
+            #{"layout #{member_string}" if member_string.present?}
+          end
+        RUBY
+      else
+        @ctx.emit <<~RUBY
+          class #{@name} < FFI::Struct
+            layout :_dummy, :size_t
+          end
+        RUBY
+      end
     end
 
     def anonymous_name
@@ -521,16 +558,17 @@ class Generator
   end
 
   class UnionTypeNode < Node
-    def initialize(ctx, qual_name, name, members)
+    def initialize(ctx, qual_name, name, members, defined)
       @ctx = ctx
       @qual_name = class_name(qual_name)
       @name = class_name(name)
       @members = members
+      @defined = defined
     end
 
     def to_param
       return "#{@qual_name}.by_value" if @ctx.known_type?(@qual_name)
-      return ":#{@qual_name}" if @ctx.known_symbol?(@qual_name)
+      #return ":#{@qual_name}" if @ctx.known_symbol?(@qual_name)
 
       @name = @ctx.generate_name("UnnamedUnion") if @name.blank?
 
@@ -545,11 +583,19 @@ class Generator
 
       member_string = member_names.zip(member_types).map { |n,t| ":#{n}, #{t}" }.join(", ")
 
-      @ctx.emit <<~RUBY
-        class #{@name} < FFI::Union
-          #{"layout #{member_string}" if member_string.present?}
-        end
-      RUBY
+      if @defined
+        @ctx.emit <<~RUBY
+          class #{@name} < FFI::Union
+            #{"layout #{member_string}" if member_string.present?}
+          end
+        RUBY
+      else
+        @ctx.emit <<~RUBY
+          class #{@name} < FFI::Union
+            layout :_dummy, :size_t
+          end
+        RUBY
+      end
     end
 
     def anonymous_name
